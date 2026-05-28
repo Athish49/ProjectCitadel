@@ -35,4 +35,5 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 markers = [
     "integration: requires a running database (make up && make migrate)",
+    "unit: pure unit tests with no external dependencies",
 ]

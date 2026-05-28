@@ -1,4 +1,4 @@
-.PHONY: up down logs ps clean health migrate test-rls test-agent-roles test-primitives
+.PHONY: up down logs ps clean health migrate test-rls test-agent-roles test-audit-chain test-primitives verify-chain
 
 up:
 	docker compose up -d --wait
@@ -35,5 +35,12 @@ test-rls:
 test-agent-roles:
 	uv run pytest tests/integration/test_agent_roles.py -v -m integration
 
+test-audit-chain:
+	uv run pytest tests/unit/test_audit_chain.py -v -m unit
+	uv run pytest tests/integration/test_audit_chain.py -v -m integration
+
+verify-chain:
+	uv run python -m audit.verify
+
 # Phase 1 milestone: all primitives tests passing (grows as sprints complete)
-test-primitives: test-rls test-agent-roles
+test-primitives: test-rls test-agent-roles test-audit-chain
