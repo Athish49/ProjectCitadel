@@ -1,4 +1,4 @@
-.PHONY: up down logs ps clean health migrate seed test-rls test-agent-roles test-audit-chain test-primitives verify-chain
+.PHONY: up down logs ps clean health migrate seed test-rls test-agent-roles test-audit-chain test-primitives verify-chain run trace-smoke
 
 up:
 	docker compose up -d --wait
@@ -44,6 +44,19 @@ test-audit-chain:
 
 verify-chain:
 	uv run python -m audit.verify
+
+run:
+	uv run uvicorn app.main:app --port $${FASTAPI_PORT:-8080} --reload
+
+# Hit /health then poll Tempo until the trace appears (accounts for 10 s idle period).
+trace-smoke:
+	@echo "==> Sending request to /health"
+	curl -fsS http://localhost:$${FASTAPI_PORT:-8080}/health
+	@echo ""
+	@echo "==> Waiting 15 s for Tempo idle period..."
+	@sleep 15
+	@echo "==> Querying Tempo for secureclaim-backend traces"
+	@curl -fsS "http://localhost:$${TEMPO_HTTP_PORT:-3200}/api/search?service.name=secureclaim-backend&limit=3" | python3 -m json.tool
 
 # Phase 1 milestone: all primitives tests passing (grows as sprints complete)
 test-primitives: test-rls test-agent-roles test-audit-chain
