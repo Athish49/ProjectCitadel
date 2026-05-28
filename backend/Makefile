@@ -1,4 +1,4 @@
-.PHONY: up down logs ps clean health migrate seed test-rls test-agent-roles test-audit-chain test-primitives verify-chain run trace-smoke
+.PHONY: up down logs ps clean health migrate seed test-rls test-agent-roles test-audit-chain test-primitives verify-chain run trace-smoke build-pdf-sandbox test-pdf-sandbox
 
 up:
 	docker compose up -d --wait
@@ -57,6 +57,13 @@ trace-smoke:
 	@sleep 15
 	@echo "==> Querying Tempo for secureclaim-backend traces"
 	@curl -fsS "http://localhost:$${TEMPO_HTTP_PORT:-3200}/api/search?service.name=secureclaim-backend&limit=3" | python3 -m json.tool
+
+build-pdf-sandbox:
+	docker build -t secureclaim-pdf-sandbox:latest sandbox/pdf/
+
+test-pdf-sandbox:
+	uv run pytest tests/unit/test_pdf_sandbox.py -v -m unit
+	uv run pytest tests/integration/test_pdf_sandbox.py -v -m integration
 
 # Phase 1 milestone: all primitives tests passing (grows as sprints complete)
 test-primitives: test-rls test-agent-roles test-audit-chain
