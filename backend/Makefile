@@ -1,4 +1,4 @@
-.PHONY: up down logs ps clean health migrate seed test-rls test-agent-roles test-audit-chain test-primitives verify-chain run trace-smoke build-pdf-sandbox test-pdf-sandbox build-image-sandbox test-image-sandbox
+.PHONY: up down logs ps clean health migrate seed test-rls test-agent-roles test-audit-chain test-primitives verify-chain run trace-smoke build-pdf-sandbox test-pdf-sandbox build-image-sandbox test-image-sandbox test-vision-redaction
 
 up:
 	docker compose up -d --wait
@@ -71,6 +71,10 @@ build-image-sandbox:
 test-image-sandbox:
 	uv run pytest tests/unit/test_image_sandbox.py -v -m unit
 	uv run pytest tests/integration/test_image_sandbox.py -v -m integration
+
+test-vision-redaction:
+	uv run pytest tests/unit/test_vision_redaction.py -v -m unit
+	uv run pytest tests/integration/test_vision_redaction.py -v -m integration
 
 # Phase 1 milestone: all primitives tests passing (grows as sprints complete)
 test-primitives: test-rls test-agent-roles test-audit-chain
