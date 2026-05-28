@@ -25,6 +25,8 @@ from decimal import Decimal
 import psycopg
 from faker import Faker
 
+from agent_system.vault.crypto import ARGON_TEST
+from agent_system.vault.store import store_pii
 from audit.chain import append_log, verify_chain
 
 ADMIN_DSN = os.environ.get(
@@ -76,10 +78,6 @@ COVERAGE_TYPES = ["BASIC", "STANDARD", "PREMIUM"]
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
-
-def _sha256_bytes(text: str) -> bytes:
-    return hashlib.sha256(text.encode()).digest()
-
 
 def _vin(fake: Faker) -> str:
     return fake.lexify(text="?" * 17, letters="ABCDEFGHJKLMNPRSTUVWXYZ0123456789")
@@ -159,26 +157,16 @@ def seed(conn: psycopg.Connection) -> None:
                     fake.city()[:100], fake.state_abbr(), fake.zipcode()[:10],
                 ),
             )
-            security_answer = fake.word() + fake.word()
-            cur.execute(
-                """
-                INSERT INTO pii_vault (
-                    customer_id,
-                    ssn_hash, ssn_last4,
-                    drivers_license_enc, dl_iv,
-                    bank_routing_enc, br_iv,
-                    bank_account_enc, ba_iv,
-                    security_answer_hash
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """,
-                (
-                    cid,
-                    _sha256_bytes(ssn), ssn[-4:],
-                    fake.binary(length=32), fake.binary(length=16),
-                    fake.binary(length=32), fake.binary(length=16),
-                    fake.binary(length=32), fake.binary(length=16),
-                    _sha256_bytes(security_answer),
-                ),
+            store_pii(
+                conn,
+                customer_id=cid,
+                ssn=ssn,
+                drivers_license=f"DL{fake.numerify('########')}",
+                bank_routing=fake.numerify("#########"),
+                bank_account=fake.numerify("##########"),
+                security_answer=fake.word() + fake.word(),
+                # Seed data is synthetic; fast params keep seeding time reasonable.
+                argon_params=ARGON_TEST,
             )
 
         # ── policies ──────────────────────────────────────────────────────
