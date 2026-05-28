@@ -1,4 +1,4 @@
-.PHONY: up down logs ps clean health migrate test-rls test-agent-roles test-audit-chain test-primitives verify-chain
+.PHONY: up down logs ps clean health migrate seed test-rls test-agent-roles test-audit-chain test-primitives verify-chain
 
 up:
 	docker compose up -d --wait
@@ -28,6 +28,9 @@ health:
 
 migrate:
 	uv run python -m db.migrate
+
+seed:
+	uv run python -m db.seed
 
 test-rls:
 	uv run pytest tests/integration/test_rls.py -v -m integration
