@@ -1,4 +1,4 @@
-.PHONY: up down logs ps clean health
+.PHONY: up down logs ps clean health migrate test-rls test-primitives
 
 up:
 	docker compose up -d --wait
@@ -25,3 +25,12 @@ health:
 	printf "otel-coll  : "; curl -fsS http://localhost:$${OTEL_HEALTH_PORT:-13133}/ > /dev/null 2>&1 && echo OK || { echo FAIL; FAIL=1; }; \
 	printf "grafana    : "; curl -fsS http://localhost:$${GRAFANA_PORT:-3001}/api/health > /dev/null 2>&1 && echo OK || { echo FAIL; FAIL=1; }; \
 	exit $$FAIL
+
+migrate:
+	uv run python -m db.migrate
+
+test-rls:
+	uv run pytest tests/integration/test_rls.py -v -m integration
+
+# Phase 1 milestone: all primitives tests passing (grows as sprints complete)
+test-primitives: test-rls
