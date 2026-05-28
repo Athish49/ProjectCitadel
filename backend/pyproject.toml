@@ -28,6 +28,7 @@ dev = [
     "mypy>=1.13",
     "faker>=40.19.1",
     "pypdf>=5.0",
+    "Pillow>=11.0",
 ]
 
 [tool.ruff]
