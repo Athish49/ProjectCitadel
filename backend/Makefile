@@ -1,4 +1,4 @@
-.PHONY: up down logs ps clean health migrate seed test-rls test-agent-roles test-audit-chain test-primitives verify-chain run trace-smoke build-pdf-sandbox test-pdf-sandbox build-image-sandbox test-image-sandbox test-vision-redaction test-pdf-hidden test-orchestrator test-prompt-registry test-parser-schemas test-intake-parser test-intake-actor test-identity-verifier-actor test-claims-processor-actor
+.PHONY: up down logs ps clean health migrate seed test-rls test-agent-roles test-audit-chain test-primitives verify-chain run trace-smoke build-pdf-sandbox test-pdf-sandbox build-image-sandbox test-image-sandbox test-vision-redaction test-pdf-hidden test-orchestrator test-prompt-registry test-parser-schemas test-intake-parser test-intake-actor test-identity-verifier-actor test-claims-processor-actor test-settlement-actor
 
 up:
 	docker compose up -d --wait
@@ -100,6 +100,9 @@ test-identity-verifier-actor:
 
 test-claims-processor-actor:
 	uv run pytest tests/unit/test_claims_processor_actor.py -v -m unit
+
+test-settlement-actor:
+	uv run pytest tests/unit/test_settlement_actor.py -v -m unit
 
 # Phase 1 milestone: all primitives tests passing (grows as sprints complete)
 test-primitives: test-rls test-agent-roles test-audit-chain
