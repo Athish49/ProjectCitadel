@@ -19,6 +19,7 @@ dependencies = [
     "opentelemetry-instrumentation-fastapi>=0.63b1",
     "cryptography>=43.0",
     "pytesseract>=0.3.13",
+    "anthropic>=0.105.2",
 ]
 
 [dependency-groups]
