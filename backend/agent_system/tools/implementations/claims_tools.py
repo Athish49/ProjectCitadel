@@ -26,9 +26,16 @@ IFC convention change vs. sample_tools.py:
   actor receives the full Labeled object and can propagate the label downstream.
   Tasks 4.1.2 onward follow the same convention.
 
-Known follow-up (4.1.3): the ToolRegistry hardcodes data_label="CONFIDENTIAL"
-  in its own audit rows (registry.py:230).  That will need updating when
-  score_fraud returns a SECRET-labelled result.
+Task 4.1.3 — score_fraud
+  Rule-based stub fraud scorer returning a SECRET-labelled full record.
+  Derives risk_score (0-100), risk_factors, and decision (CLEAR/FLAG/DENY)
+  from a SHA-256 hash of claim_id.  Thresholds: score<30→CLEAR, <60→FLAG,
+  ≥60→DENY.  risk_factors subset selected from a per-tier catalogue; mirrors
+  the fraud_scores table schema (Doc 03 §2.7).
+
+  The ToolRegistry audit row data_label is now dynamic (registry.py step 5):
+  it reads value.label.level.value when the handler returns a Labeled object,
+  so the audit row correctly records "SECRET" for this tool.
 """
 from __future__ import annotations
 
@@ -65,6 +72,7 @@ _CONFIDENCE: dict[str, float] = {
 }
 
 _LABEL_CONFIDENTIAL = Label(level=DataLabel.CONFIDENTIAL, untrusted=False)
+_LABEL_SECRET       = Label(level=DataLabel.SECRET,       untrusted=False)
 
 # ---------------------------------------------------------------------------
 # Coverage catalogue — mirrors seed.py / Doc 03 §2.3
@@ -154,4 +162,90 @@ def lookup_coverage(claim_id: str) -> Labeled[dict]:
             "coverage_applicable": (h >> 32) % 6 != 0,
         },
         label=_LABEL_CONFIDENTIAL,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Fraud risk-factor catalogue — per decision tier (Doc 03 §2.7)
+# risk_factors is JSONB in production; stub returns a deterministic subset.
+# ---------------------------------------------------------------------------
+
+_FACTORS_CLEAR: list[str] = [
+    "policy_active",
+    "amount_within_limit",
+    "claim_history_clean",
+]
+
+_FACTORS_FLAG: list[str] = [
+    "amount_above_average",
+    "policy_age_under_90d",
+    "claim_frequency_elevated",
+    "incident_type_mismatch",
+]
+
+_FACTORS_DENY: list[str] = [
+    "amount_threshold_exceeded",
+    "policy_creation_proximity",
+    "claim_frequency_high",
+    "cross_claim_pattern",
+    "evidence_hash_anomaly",
+]
+
+
+# ---------------------------------------------------------------------------
+# Tool: score_fraud — task 4.1.3
+# ---------------------------------------------------------------------------
+
+
+def score_fraud(claim_id: str) -> Labeled[dict]:
+    """Deterministic rule-based fraud scorer (P3 + P9 via ToolRegistry).
+
+    Args:
+        claim_id: claim_id string (UUID or any stable identifier).
+
+    Returns:
+        Labeled[dict] with data_label=SECRET containing:
+            claim_id      — echoed back for traceability
+            risk_score    — integer 0-100; SECRET (reveals model signal)
+            risk_factors  — list[str]; SECRET (reveals model logic)
+            decision      — CLEAR / FLAG / DENY (derived from risk_score)
+
+    Thresholds: score<30 → CLEAR, score<60 → FLAG, score≥60 → DENY.
+    The orchestrator must only propagate `decision`; risk_score and
+    risk_factors must not leave the claims processor runtime (egress P10).
+
+    The ToolRegistry writes the tool_call_ok audit row with data_label=SECRET
+    (fixed in 4.1.3: registry step 5 reads value.label.level.value when the
+    handler returns a Labeled object).
+    """
+    h = int(hashlib.sha256(claim_id.encode()).hexdigest(), 16)
+    risk_score = h % 101  # 0-100 inclusive
+
+    if risk_score < 30:
+        decision = "CLEAR"
+        catalogue = _FACTORS_CLEAR
+        n_factors = 1 + (h >> 8) % len(_FACTORS_CLEAR)
+    elif risk_score < 60:
+        decision = "FLAG"
+        catalogue = _FACTORS_FLAG
+        n_factors = 1 + (h >> 8) % len(_FACTORS_FLAG)
+    else:
+        decision = "DENY"
+        catalogue = _FACTORS_DENY
+        n_factors = 2 + (h >> 8) % (len(_FACTORS_DENY) - 1)
+
+    # Select a deterministic, ordered subset of factors.
+    risk_factors = [catalogue[(i + (h >> 16)) % len(catalogue)] for i in range(n_factors)]
+    # Deduplicate while preserving order.
+    seen: set[str] = set()
+    risk_factors = [f for f in risk_factors if not (f in seen or seen.add(f))]  # type: ignore[func-returns-value]
+
+    return Labeled(
+        value={
+            "claim_id":     claim_id,
+            "risk_score":   risk_score,
+            "risk_factors": risk_factors,
+            "decision":     decision,
+        },
+        label=_LABEL_SECRET,
     )

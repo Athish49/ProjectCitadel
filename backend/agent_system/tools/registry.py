@@ -34,6 +34,7 @@ from typing import Any, Callable
 import psycopg
 
 from audit.chain import append_log
+from agent_system.ifc.labels import Labeled
 from agent_system.tools.capability_tokens import (
     CapabilityToken,
     DenyReason,
@@ -221,13 +222,16 @@ class ToolRegistry:
             return InvokeResult.error(exc, log_id=log_id)
 
         # ── Step 5: record success ───────────────────────────────────────────
+        # Use the handler's own IFC label when it returns a Labeled value so
+        # the audit row correctly reflects SECRET-labelled tools (e.g. score_fraud).
+        audit_label = value.label.level.value if isinstance(value, Labeled) else "CONFIDENTIAL"
         record_use(conn, token.token_id, VerifyResult.success())
         log_id = append_log(
             conn,
             agent_id=calling_agent_id,
             action="tool_call_ok",
             target=f"tools/{tool_name}",
-            data_label="CONFIDENTIAL",
+            data_label=audit_label,
             trace_id=trace_id,
             details=base_details,
             security_event=False,
