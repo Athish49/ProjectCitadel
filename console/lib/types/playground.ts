@@ -42,11 +42,23 @@ export interface PlaygroundTrace {
   traceId: string;
   attackId: number;
   attackName: string;
+  tab: AttackComposerTab;
   submittedAt: string;
   layers: TraceLayer[];
-  verdict: TraceVerdict;
+  verdict: TraceVerdict | null;
   isExample: boolean;
+  isReplay: boolean;
 }
+
+export const LAYER_DEFINITIONS: { id: string; name: string; pattern: PatternId | null }[] = [
+  { id: "ingress",             name: "Ingress Sanitisation", pattern: "P1"  },
+  { id: "pattern-detection",   name: "Pattern Detection",    pattern: "P3"  },
+  { id: "semantic-classifier", name: "Semantic Classifier",  pattern: "P3"  },
+  { id: "untrusted-tagging",   name: "Untrusted Tagging",    pattern: "P3"  },
+  { id: "parser-llm",          name: "Parser LLM",           pattern: "P1"  },
+  { id: "actor-llm",           name: "Actor LLM",            pattern: "P2"  },
+  { id: "egress-filter",       name: "Egress Filter",        pattern: "P10" },
+];
 
 export interface AttackTemplate {
   id: string;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   MessageSquare,
   FileText,
@@ -14,7 +14,7 @@ import {
 import { cn } from "@/lib/utils";
 import { TemplatePicker } from "@/components/playground/template-picker";
 import { UploadZone } from "@/components/playground/upload-zone";
-import { templatesForTab } from "@/components/playground/attack-templates";
+import { ATTACK_TEMPLATES, templatesForTab } from "@/components/playground/attack-templates";
 import type {
   AttackComposerTab,
   AttackTemplate,
@@ -40,14 +40,24 @@ const TARGET_FLOWS: { id: TargetFlow; label: string }[] = [
 interface AttackComposerProps {
   onSubmit: (payload: string, tab: AttackComposerTab, targetFlow: TargetFlow, sessionMode: SessionMode) => Promise<void>;
   isSubmitting: boolean;
+  initialTemplateId?: string | null;
 }
 
-export function AttackComposer({ onSubmit, isSubmitting }: AttackComposerProps) {
+export function AttackComposer({ onSubmit, isSubmitting, initialTemplateId }: AttackComposerProps) {
   const [tab, setTab] = useState<AttackComposerTab>("chat");
   const [payload, setPayload] = useState("");
   const [targetFlow, setTargetFlow] = useState<TargetFlow>("intake");
   const [sessionMode, setSessionMode] = useState<SessionMode>("sandboxed");
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+
+  useEffect(() => {
+    if (!initialTemplateId) return;
+    const tmpl = ATTACK_TEMPLATES.find((t) => t.id === initialTemplateId);
+    if (!tmpl) return;
+    setTab(tmpl.tab);
+    setPayload(tmpl.payload);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function handleTemplateSelect(t: AttackTemplate) {
     setPayload(t.payload);

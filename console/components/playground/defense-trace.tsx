@@ -1,8 +1,10 @@
 "use client";
 
-import { ShieldCheck, ShieldAlert, Shield, AlertTriangle, Info } from "lucide-react";
+import { useState } from "react";
+import { ShieldCheck, ShieldAlert, Shield, AlertTriangle, Info, Loader2, Copy, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { FadeIn, SlideIn } from "@/components/primitives/motion";
+import { EvidenceLink } from "@/components/primitives/evidence-link";
 import { TraceLayerPanel } from "@/components/playground/trace-layer";
 import type { PlaygroundTrace, PlaygroundVerdict } from "@/lib/types/playground";
 
@@ -100,8 +102,9 @@ function EmptyState() {
       <div className="flex max-w-md items-start gap-2 rounded border border-border bg-bg-1 px-3 py-2.5">
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-fg-3" />
         <p className="font-mono text-[10px] leading-relaxed text-fg-3">
-          Live WebSocket streaming connects in Sprint 3.2.2. Submissions now return an example trace
-          showing the P1 dual-LLM separation defense firing on a direct prompt injection.
+          Each submission streams layer-by-layer defense events via SSE. Scenarios are
+          scenario-simulated with realistic timing; the structural defense logic (P1–P12) is
+          faithfully reproduced.
         </p>
       </div>
     </FadeIn>
@@ -115,8 +118,18 @@ interface TraceViewProps {
 }
 
 function TraceView({ trace }: TraceViewProps) {
-  const cfg = VERDICT_CONFIG[trace.verdict.outcome];
-  const VerdictIcon = cfg.icon;
+  const verdict = trace.verdict;
+  const cfg = verdict ? VERDICT_CONFIG[verdict.outcome] : null;
+  const VerdictIcon = cfg?.icon ?? null;
+  const [copied, setCopied] = useState(false);
+
+  function handleShare() {
+    const url = `${window.location.origin}/playground?tab=${encodeURIComponent(trace.tab)}&autorun=1`;
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  }
 
   return (
     <FadeIn className="flex h-full flex-col">
@@ -132,6 +145,25 @@ function TraceView({ trace }: TraceViewProps) {
               example trace
             </span>
           )}
+          {trace.isReplay && (
+            <span className="rounded-sm border border-audit/40 bg-audit/10 px-1.5 py-0.5 font-mono text-[10px] text-audit">
+              replay
+            </span>
+          )}
+          {verdict && (
+            <button
+              type="button"
+              onClick={handleShare}
+              title="Copy replay URL"
+              className="ml-auto flex items-center gap-1 rounded border border-border px-1.5 py-0.5 font-mono text-[10px] text-fg-3 transition-colors hover:border-fg-3 hover:text-fg-1"
+            >
+              {copied ? (
+                <><Check className="h-2.5 w-2.5 text-ok" />Copied</>
+              ) : (
+                <><Copy className="h-2.5 w-2.5" />Share</>
+              )}
+            </button>
+          )}
         </div>
         <div className="mt-1 font-mono text-[10px] text-fg-3">
           Trace {trace.traceId} · {trace.submittedAt}
@@ -141,47 +173,69 @@ function TraceView({ trace }: TraceViewProps) {
       {/* layers */}
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3 space-y-1.5">
         {trace.layers.map((layer, i) => (
-          <SlideIn key={layer.id} delay={i * 0.06} direction="up">
+          <SlideIn key={layer.id} delay={i * 0.04} direction="up">
             <TraceLayerPanel layer={layer} index={i} />
           </SlideIn>
         ))}
       </div>
 
-      {/* verdict */}
-      <SlideIn
-        delay={trace.layers.length * 0.06 + 0.05}
-        className="shrink-0 border-t border-border px-4 py-3"
-      >
-        <div
-          className={cn(
-            "flex items-start gap-3 rounded border px-4 py-3",
-            cfg.bg,
-            cfg.border
-          )}
-        >
-          <VerdictIcon className={cn("mt-0.5 h-4 w-4 shrink-0", cfg.color)} />
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <span className={cn("font-mono text-xs font-bold", cfg.color)}>
-                {cfg.label}
-              </span>
-              {trace.verdict.blockedByPattern && (
-                <span className="rounded-sm border border-current px-1 py-0.5 font-mono text-[10px] opacity-70 text-trust border-trust">
-                  {trace.verdict.blockedByPattern}
-                </span>
+      {/* verdict — shows spinner while streaming, panel once complete */}
+      <div className="shrink-0 border-t border-border px-4 py-3">
+        {verdict && cfg && VerdictIcon ? (
+          <SlideIn direction="up">
+            <div
+              className={cn(
+                "flex items-start gap-3 rounded border px-4 py-3",
+                cfg.bg,
+                cfg.border
               )}
-              {trace.verdict.blockedByLayer && (
-                <span className="font-mono text-[10px] text-fg-3">
-                  at {trace.verdict.blockedByLayer}
-                </span>
-              )}
+            >
+              <VerdictIcon className={cn("mt-0.5 h-4 w-4 shrink-0", cfg.color)} />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className={cn("font-mono text-xs font-bold", cfg.color)}>
+                    {cfg.label}
+                  </span>
+                  {verdict.blockedByPattern && (
+                    <span className="rounded-sm border border-trust px-1 py-0.5 font-mono text-[10px] text-trust opacity-70">
+                      {verdict.blockedByPattern}
+                    </span>
+                  )}
+                  {verdict.blockedByLayer && (
+                    <span className="font-mono text-[10px] text-fg-3">
+                      at {verdict.blockedByLayer}
+                    </span>
+                  )}
+                </div>
+                <p className="mt-1 font-mono text-[10px] leading-relaxed text-fg-2">
+                  {verdict.summary}
+                </p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  <EvidenceLink
+                    href={`/audit?trace=${trace.traceId}`}
+                    label="Evidence: open audit rows"
+                  />
+                  {verdict.blockedByPattern && (
+                    <EvidenceLink
+                      href={`/patterns/${verdict.blockedByPattern}`}
+                      label={`Pattern: ${verdict.blockedByPattern}`}
+                    />
+                  )}
+                  <EvidenceLink
+                    href="/matrix"
+                    label="Attack matrix"
+                  />
+                </div>
+              </div>
             </div>
-            <p className="mt-1 font-mono text-[10px] leading-relaxed text-fg-2">
-              {trace.verdict.summary}
-            </p>
+          </SlideIn>
+        ) : (
+          <div className="flex items-center gap-2 py-1 text-fg-3">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            <span className="font-mono text-[10px]">Evaluating…</span>
           </div>
-        </div>
-      </SlideIn>
+        )}
+      </div>
     </FadeIn>
   );
 }

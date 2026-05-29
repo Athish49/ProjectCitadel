@@ -12,8 +12,10 @@ export function buildExampleTrace(attackId: number, attackName: string): Playgro
     traceId: `ex-${Math.random().toString(36).slice(2, 9)}`,
     attackId,
     attackName,
+    tab: "chat",
     submittedAt: fmt(0),
     isExample: true,
+    isReplay: false,
     layers: [
       {
         id: "ingress",
