@@ -1,4 +1,4 @@
-.PHONY: up down logs ps clean health migrate seed test-rls test-agent-roles test-audit-chain test-primitives verify-chain run trace-smoke build-pdf-sandbox test-pdf-sandbox build-image-sandbox test-image-sandbox test-vision-redaction test-pdf-hidden test-orchestrator test-prompt-registry test-parser-schemas test-intake-parser test-intake-actor test-identity-verifier-actor test-claims-processor-actor test-settlement-actor test-vertical-slice test-signed-envelopes test-capability-token-pipeline
+.PHONY: up down logs ps clean health migrate seed test-rls test-agent-roles test-audit-chain test-primitives verify-chain run trace-smoke build-pdf-sandbox test-pdf-sandbox build-image-sandbox test-image-sandbox test-vision-redaction test-pdf-hidden test-orchestrator test-prompt-registry test-parser-schemas test-intake-parser test-intake-actor test-identity-verifier-actor test-claims-processor-actor test-settlement-actor test-vertical-slice test-signed-envelopes test-capability-token-pipeline test-attack-suite
 
 up:
 	docker compose up -d --wait
@@ -112,6 +112,9 @@ test-signed-envelopes:
 
 test-capability-token-pipeline:
 	uv run pytest tests/integration/test_capability_token_pipeline.py -v -m integration
+
+test-attack-suite:
+	uv run pytest tests/unit/test_attack_suite.py -v -m unit
 
 # Phase 1 milestone: all primitives tests passing (grows as sprints complete)
 test-primitives: test-rls test-agent-roles test-audit-chain
