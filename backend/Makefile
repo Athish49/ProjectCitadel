@@ -1,4 +1,4 @@
-.PHONY: up down logs ps clean health migrate seed test-rls test-agent-roles test-audit-chain test-primitives verify-chain run trace-smoke build-pdf-sandbox test-pdf-sandbox build-image-sandbox test-image-sandbox test-vision-redaction test-pdf-hidden test-orchestrator test-prompt-registry
+.PHONY: up down logs ps clean health migrate seed test-rls test-agent-roles test-audit-chain test-primitives verify-chain run trace-smoke build-pdf-sandbox test-pdf-sandbox build-image-sandbox test-image-sandbox test-vision-redaction test-pdf-hidden test-orchestrator test-prompt-registry test-parser-schemas
 
 up:
 	docker compose up -d --wait
@@ -85,6 +85,9 @@ test-orchestrator:
 
 test-prompt-registry:
 	uv run pytest tests/unit/test_prompt_registry.py -v -m unit
+
+test-parser-schemas:
+	uv run pytest tests/unit/test_parser_schemas.py -v -m unit
 
 # Phase 1 milestone: all primitives tests passing (grows as sprints complete)
 test-primitives: test-rls test-agent-roles test-audit-chain
