@@ -2,7 +2,7 @@
 
 Public API:
   run_intake_actor(intake_output, *, pre_issued_tokens, orchestrator_public_key,
-                   client, audit_fn, session_id) -> IntakeEnvelope
+                   client, audit_fn, session_id, conn=None) -> IntakeEnvelope
 
 Design:
   - Model: Claude Haiku 4.5; temperature=0.
@@ -12,10 +12,10 @@ Design:
   - P4 gate: orchestrator pre-issues one CapabilityToken per allowed tool and passes
     them in pre_issued_tokens. The actor never holds the orchestrator private key —
     trust boundary intact.
-  - Each tool call: look up token → verify_token() → handler → audit.
+  - When conn is provided: ToolRegistry.invoke() path — DB-backed replay protection;
+    tool audit rows written by registry (no duplicate _audit calls for tool events).
+  - When conn is None: legacy verify_token() path — unit tests; no DB required.
   - Outcome determined by which terminal tool was called (deterministic code, not LLM).
-  - TODO (integration): replace single-token-per-tool with ToolRegistry.invoke() +
-    DB-backed replay protection when wiring 2.2.x.
 """
 from __future__ import annotations
 
@@ -24,9 +24,11 @@ from dataclasses import dataclass
 from typing import Any, Callable, Protocol
 
 import anthropic
+import psycopg
 
 from agent_system.parser.schemas import IntakeOutput
 from agent_system.tools.capability_tokens import CapabilityToken, verify_token
+from agent_system.tools.registry import ToolRegistry
 
 ACTOR_MODEL = "claude-haiku-4-5-20251001"
 ACTOR_AGENT_ID = "intake_actor"
@@ -182,6 +184,12 @@ _HANDLERS: dict[str, Callable[..., dict[str, Any]]] = {
     "search_public_faq": _handle_search_public_faq,
 }
 
+# Module-level registry for the DB-backed path (task 2.2.3).
+_REGISTRY = ToolRegistry()
+_REGISTRY.register("mark_intake_complete", _handle_mark_intake_complete)
+_REGISTRY.register("request_more_info", _handle_request_more_info)
+_REGISTRY.register("search_public_faq", _handle_search_public_faq)
+
 
 # ---------------------------------------------------------------------------
 # System prompt
@@ -237,6 +245,7 @@ def run_intake_actor(
     client: anthropic.Anthropic | None = None,
     audit_fn: AuditFn | None = None,
     session_id: str = "unknown",
+    conn: psycopg.Connection | None = None,
 ) -> IntakeEnvelope:
     """Run the intake actor LLM with P4 capability-token-gated tools.
 
@@ -300,52 +309,73 @@ def run_intake_actor(
                 })
                 continue
 
-            vr = verify_token(
-                token,
-                calling_agent_id=ACTOR_AGENT_ID,
-                tool=tool_name,
-                params=tool_input,
-                orchestrator_public_key=orchestrator_public_key,
-            )
+            if conn is not None:
+                # DB-backed path: ToolRegistry enforces replay protection and
+                # writes tool_call_ok / tool_call_denied to audit_log.
+                invoke_result = _REGISTRY.invoke(
+                    conn,
+                    token=token,
+                    calling_agent_id=ACTOR_AGENT_ID,
+                    tool_name=tool_name,
+                    params=tool_input,
+                    orchestrator_public_key=orchestrator_public_key,
+                )
+                conn.commit()
+                if not invoke_result.ok:
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": "Error: capability token verification failed.",
+                        "is_error": True,
+                    })
+                    continue
+                result = invoke_result.value
+            else:
+                # Legacy path (unit tests; no DB connection).
+                vr = verify_token(
+                    token,
+                    calling_agent_id=ACTOR_AGENT_ID,
+                    tool=tool_name,
+                    params=tool_input,
+                    orchestrator_public_key=orchestrator_public_key,
+                )
+                if not vr:
+                    _audit(
+                        agent_id=ACTOR_AGENT_ID,
+                        action="tool_call_denied",
+                        target=session_id,
+                        data_label="CONFIDENTIAL",
+                        details={"tool": tool_name, "deny_reason": vr.deny_reason.value},
+                        security_event=True,
+                    )
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": "Error: capability token verification failed.",
+                        "is_error": True,
+                    })
+                    continue
 
-            if not vr:
+                handler = _HANDLERS.get(tool_name)
+                if handler is None:
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": "Error: unknown tool.",
+                        "is_error": True,
+                    })
+                    continue
+
+                result = handler(**tool_input)
                 _audit(
                     agent_id=ACTOR_AGENT_ID,
-                    action="tool_call_denied",
+                    action="tool_call_ok",
                     target=session_id,
                     data_label="CONFIDENTIAL",
-                    details={"tool": tool_name, "deny_reason": vr.deny_reason.value},
-                    security_event=True,
+                    details={"tool": tool_name},
+                    security_event=False,
                 )
-                tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": block.id,
-                    "content": "Error: capability token verification failed.",
-                    "is_error": True,
-                })
-                continue
             # ─────────────────────────────────────────────────────────────
-
-            handler = _HANDLERS.get(tool_name)
-            if handler is None:
-                tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": block.id,
-                    "content": "Error: unknown tool.",
-                    "is_error": True,
-                })
-                continue
-
-            result = handler(**tool_input)
-
-            _audit(
-                agent_id=ACTOR_AGENT_ID,
-                action="tool_call_ok",
-                target=session_id,
-                data_label="CONFIDENTIAL",
-                details={"tool": tool_name},
-                security_event=False,
-            )
 
             # Track terminal tools
             if tool_name == "mark_intake_complete" and terminal_tool is None:

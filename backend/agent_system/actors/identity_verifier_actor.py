@@ -30,8 +30,10 @@ from dataclasses import dataclass
 from typing import Any, Callable, Protocol
 
 import anthropic
+import psycopg
 
 from agent_system.tools.capability_tokens import CapabilityToken, verify_token
+from agent_system.tools.registry import ToolRegistry
 
 ACTOR_MODEL = "claude-haiku-4-5-20251001"
 ACTOR_AGENT_ID = "identity_verifier"
@@ -183,6 +185,7 @@ def run_identity_verifier_actor(
     client: anthropic.Anthropic | None = None,
     audit_fn: AuditFn | None = None,
     session_id: str = "unknown",
+    conn: psycopg.Connection | None = None,
 ) -> IdentityEnvelope:
     """Run the identity verifier actor with P4 capability-token-gated tool.
 
@@ -197,6 +200,16 @@ def run_identity_verifier_actor(
     _client = client or anthropic.Anthropic()
     _audit: AuditFn = audit_fn if audit_fn is not None else _noop_audit  # type: ignore[assignment]
     _check_fn = identity_check_fn if identity_check_fn is not None else _unwired_identity_check_fn
+
+    if conn is not None:
+        _registry = ToolRegistry()
+
+        def _identity_handler(
+            policy_number: str, dob_hint: str, ssn_last4: str
+        ) -> dict[str, Any]:
+            return _check_fn(policy_number, dob_hint, ssn_last4)
+
+        _registry.register(_TOOL_NAME, _identity_handler)
 
     messages: list[dict[str, Any]] = [
         {"role": "user", "content": _build_user_message(policy_number, dob_hint, ssn_last4)}
@@ -245,56 +258,78 @@ def run_identity_verifier_actor(
                 })
                 continue
 
-            vr = verify_token(
-                token,
-                calling_agent_id=ACTOR_AGENT_ID,
-                tool=tool_name,
-                params=tool_input,
-                orchestrator_public_key=orchestrator_public_key,
-            )
+            if conn is not None:
+                # DB-backed path: ToolRegistry enforces replay protection and
+                # writes tool_call_ok / tool_call_denied to audit_log.
+                invoke_result = _registry.invoke(
+                    conn,
+                    token=token,
+                    calling_agent_id=ACTOR_AGENT_ID,
+                    tool_name=tool_name,
+                    params=tool_input,
+                    orchestrator_public_key=orchestrator_public_key,
+                )
+                conn.commit()
+                if not invoke_result.ok:
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": "Error: capability token verification failed.",
+                        "is_error": True,
+                    })
+                    continue
+                raw = invoke_result.value
+                check_result = raw
+            else:
+                # Legacy path (unit tests; no DB connection).
+                vr = verify_token(
+                    token,
+                    calling_agent_id=ACTOR_AGENT_ID,
+                    tool=tool_name,
+                    params=tool_input,
+                    orchestrator_public_key=orchestrator_public_key,
+                )
+                if not vr:
+                    _audit(
+                        agent_id=ACTOR_AGENT_ID,
+                        action="tool_call_denied",
+                        target=session_id,
+                        data_label="PERSONAL",
+                        details={"tool": tool_name, "deny_reason": vr.deny_reason.value},
+                        security_event=True,
+                    )
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": "Error: capability token verification failed.",
+                        "is_error": True,
+                    })
+                    continue
 
-            if not vr:
+                if tool_name != _TOOL_NAME:
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": "Error: unknown tool.",
+                        "is_error": True,
+                    })
+                    continue
+
+                raw = _check_fn(
+                    tool_input["policy_number"],
+                    tool_input["dob_hint"],
+                    tool_input["ssn_last4"],
+                )
+                check_result = raw
                 _audit(
                     agent_id=ACTOR_AGENT_ID,
-                    action="tool_call_denied",
+                    action="tool_call_ok",
                     target=session_id,
                     data_label="PERSONAL",
-                    details={"tool": tool_name, "deny_reason": vr.deny_reason.value},
-                    security_event=True,
+                    details={"tool": tool_name, "verified": raw.get("verified")},
+                    security_event=False,
                 )
-                tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": block.id,
-                    "content": "Error: capability token verification failed.",
-                    "is_error": True,
-                })
-                continue
             # ─────────────────────────────────────────────────────────────
-
-            if tool_name != _TOOL_NAME:
-                tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": block.id,
-                    "content": "Error: unknown tool.",
-                    "is_error": True,
-                })
-                continue
-
-            raw = _check_fn(
-                tool_input["policy_number"],
-                tool_input["dob_hint"],
-                tool_input["ssn_last4"],
-            )
-            check_result = raw
-
-            _audit(
-                agent_id=ACTOR_AGENT_ID,
-                action="tool_call_ok",
-                target=session_id,
-                data_label="PERSONAL",
-                details={"tool": tool_name, "verified": raw.get("verified")},
-                security_event=False,
-            )
 
             # Return only the boolean signal to the LLM — never vault data
             tool_results.append({
