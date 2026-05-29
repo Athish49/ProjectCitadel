@@ -1,0 +1,144 @@
+/* Tailwind v4 — deviates from Doc 06 §10 which specifies v3; v4 was installed
+   by create-next-app@15 and shadcn/ui supports it since Feb 2025. */
+@import "tailwindcss";
+@plugin "tailwindcss-animate";
+
+/* ── Design tokens — dark theme (default) ──────────────────────────────────── */
+:root {
+  /* Background scale */
+  --bg-0: #0A0E14;
+  --bg-1: #0F141B;
+  --bg-2: #161C24;
+  --bg-3: #1E2632;
+
+  /* Foreground scale */
+  --fg-0: #E6EDF3;
+  --fg-1: #B0BAC6;
+  --fg-2: #6E7B8C;
+  --fg-3: #3D4856;
+
+  /* Signal palette */
+  --ok: #4ADE80;
+  --warn: #F5B056;
+  --alert: #F25B5B;
+  --attack: #C879FF;
+  --trust: #5BB5F2;
+  --audit: #8B96A8;
+
+  /* Trust label colours */
+  --label-public: #4ADE80;
+  --label-personal: #F5B056;
+  --label-confidential: #F25B5B;
+  --label-secret: #C879FF;
+  --label-untrusted: #6E7B8C;
+
+  /* shadcn/ui base variables */
+  --background: var(--bg-0);
+  --foreground: var(--fg-0);
+  --card: var(--bg-1);
+  --card-foreground: var(--fg-0);
+  --popover: var(--bg-1);
+  --popover-foreground: var(--fg-0);
+  --primary: var(--fg-0);
+  --primary-foreground: var(--bg-0);
+  --secondary: var(--bg-2);
+  --secondary-foreground: var(--fg-1);
+  --muted: var(--bg-2);
+  --muted-foreground: var(--fg-2);
+  --accent: var(--bg-3);
+  --accent-foreground: var(--fg-0);
+  --destructive: var(--alert);
+  --destructive-foreground: var(--bg-0);
+  --border: var(--bg-3);
+  --input: var(--bg-3);
+  --ring: var(--trust);
+  --radius: 0.375rem;
+}
+
+/* Light theme (opt-in via .light class on <html>) */
+.light {
+  --bg-0: #FFFFFF;
+  --bg-1: #F8F9FA;
+  --bg-2: #F0F2F5;
+  --bg-3: #E1E4E8;
+  --fg-0: #0A0E14;
+  --fg-1: #2D3748;
+  --fg-2: #4A5568;
+  --fg-3: #718096;
+}
+
+/* ── Tailwind v4 theme registration ────────────────────────────────────────── */
+@theme inline {
+  /* Background scale → bg-bg-0 … bg-bg-3 */
+  --color-bg-0: var(--bg-0);
+  --color-bg-1: var(--bg-1);
+  --color-bg-2: var(--bg-2);
+  --color-bg-3: var(--bg-3);
+
+  /* Foreground scale → text-fg-0 … text-fg-3 */
+  --color-fg-0: var(--fg-0);
+  --color-fg-1: var(--fg-1);
+  --color-fg-2: var(--fg-2);
+  --color-fg-3: var(--fg-3);
+
+  /* Signal palette */
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-alert: var(--alert);
+  --color-attack: var(--attack);
+  --color-trust: var(--trust);
+  --color-audit: var(--audit);
+
+  /* Trust labels */
+  --color-label-public: var(--label-public);
+  --color-label-personal: var(--label-personal);
+  --color-label-confidential: var(--label-confidential);
+  --color-label-secret: var(--label-secret);
+  --color-label-untrusted: var(--label-untrusted);
+
+  /* shadcn/ui semantic colours */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* Typography */
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-jetbrains-mono);
+
+  /* Border radius */
+  --radius-sm: calc(var(--radius) - 0.125rem);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 0.125rem);
+  --radius-xl: calc(var(--radius) + 0.375rem);
+}
+
+/* ── Base styles ────────────────────────────────────────────────────────────── */
+* {
+  border-color: var(--border);
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
