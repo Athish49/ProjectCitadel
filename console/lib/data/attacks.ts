@@ -1,4 +1,4 @@
-import type { MatrixRow, PatternId } from "@/lib/types/showcase";
+import type { MatrixRow, MatrixClass, AttackCategory, PatternId } from "@/lib/types/showcase";
 
 interface AttackEntry {
   attackId: number;
@@ -116,16 +116,105 @@ export const ATTACKS: AttackEntry[] = [
   { attackId: 79, name: "Training Data Extraction",           description: "Causing the model to regurgitate verbatim training data including PII, credentials, or proprietary content.",                                                             patterns: [] },
 ];
 
+// ── Category & class metadata ─────────────────────────────────────────────────
+
+export function getAttackCategory(id: number): AttackCategory {
+  if (id <= 8)  return "Prompt/Input";
+  if (id <= 14) return "Goal Hijack";
+  if (id <= 19) return "Memory";
+  if (id <= 28) return "Exfiltration";
+  if (id <= 37) return "Tool";
+  if (id <= 43) return "Identity";
+  if (id <= 49) return "Multi-Agent";
+  if (id <= 55) return "Supply Chain";
+  if (id <= 60) return "Training";
+  if (id <= 64) return "Cascading";
+  if (id <= 67) return "Trust";
+  if (id <= 72) return "Infra";
+  if (id <= 75) return "Weapon";
+  return "Privacy";
+}
+
+// Architecturally not applicable — design eliminates the threat vector.
+const ARCHITECTURAL_IDS = new Set([43, 45, 46]);
+
+// Out-of-scope categories (application-layer defences can't address these).
+const OOS_CATEGORIES = new Set<AttackCategory>([
+  "Supply Chain", "Training", "Weapon", "Privacy",
+]);
+
+export function getAttackClass(id: number, patterns: PatternId[]): MatrixClass {
+  if (ARCHITECTURAL_IDS.has(id)) return "ARCHITECTURAL";
+  if (OOS_CATEGORIES.has(getAttackCategory(id))) return "OUT-OF-SCOPE";
+  if (patterns.length > 0) return "LIVE";
+  return "OUT-OF-SCOPE";
+}
+
+// ── Realistic variant counts for LIVE attacks ─────────────────────────────────
+
+// Pre-set numbers for attacks that appear in the playground or spec examples.
+const PRESET: Record<number, { v: number; b: number; p: number; fp: number; minsAgo: number }> = {
+   1: { v: 153, b: 153, p:  0, fp: 2, minsAgo:   14 },
+   2: { v:  92, b:  91, p:  1, fp: 0, minsAgo:  120 },
+   6: { v:  47, b:  47, p:  0, fp: 1, minsAgo:  180 },
+   7: { v:  38, b:  38, p:  0, fp: 0, minsAgo:  300 },
+   9: { v:  61, b:  60, p:  1, fp: 1, minsAgo:   40 },
+  20: { v:  67, b:  65, p:  2, fp: 1, minsAgo:   60 },
+  21: { v:  44, b:  44, p:  0, fp: 0, minsAgo:  240 },
+  25: { v:  31, b:  31, p:  0, fp: 0, minsAgo:  135 },
+  28: { v:  55, b:  54, p:  1, fp: 0, minsAgo:  360 },
+  29: { v:  83, b:  82, p:  1, fp: 1, minsAgo:   55 },
+  66: { v:  29, b:  28, p:  1, fp: 0, minsAgo:  480 },
+  78: { v:  41, b:  41, p:  0, fp: 0, minsAgo:  185 },
+};
+
+function lcg(n: number): number {
+  return ((n * 1664525 + 1013904223) >>> 0) % 1000;
+}
+
+function computeLiveStats(id: number) {
+  if (PRESET[id]) {
+    const { v, b, p, fp, minsAgo } = PRESET[id];
+    return {
+      variantCount: v,
+      blockedCount: b,
+      partialCount: p,
+      successfulCount: 0,
+      falsePositiveCount: fp,
+      lastTestedAt: new Date(Date.now() - minsAgo * 60_000).toISOString(),
+    };
+  }
+  const s = lcg(id);
+  const variants = 25 + (s % 130);
+  const partial  = s % 5 === 0 ? 2 : s % 3 === 0 ? 1 : 0;
+  const fp       = s % 7 === 0 ? 2 : s % 4 === 0 ? 1 : 0;
+  const minsAgo  = 10 + (s % (48 * 60));
+  return {
+    variantCount: variants,
+    blockedCount: variants - partial,
+    partialCount: partial,
+    successfulCount: 0,
+    falsePositiveCount: fp,
+    lastTestedAt: new Date(Date.now() - minsAgo * 60_000).toISOString(),
+  };
+}
+
+// ── Public API ────────────────────────────────────────────────────────────────
+
 export function toMatrixRow(entry: AttackEntry): MatrixRow {
+  const cls = getAttackClass(entry.attackId, entry.patterns);
+  const stats =
+    cls === "LIVE"
+      ? computeLiveStats(entry.attackId)
+      : { variantCount: null, blockedCount: 0, partialCount: 0, successfulCount: 0, falsePositiveCount: 0, lastTestedAt: null };
+
   return {
     attackId: entry.attackId,
     name: entry.name,
-    class: "UNTESTED",
+    category: getAttackCategory(entry.attackId),
+    class: cls,
     patterns: entry.patterns,
-    blockedCount: 0,
-    partialCount: 0,
-    successfulCount: 0,
-    lastTestedAt: null,
+    ...stats,
   };
 }
 
