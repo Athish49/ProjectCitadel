@@ -95,8 +95,69 @@ services:
       retries: 10
       start_period: 10s
 
+  # ---------------------------------------------------------------------------
+  # Adversarial agent + its dedicated API target (Sprint 4.3.1)
+  #
+  # Network isolation:
+  #   adversarial-api  → default network (DB/ChromaDB) + adversarial_net (attack traffic)
+  #   adversarial-agent → adversarial_net ONLY (cannot reach postgres/chromadb directly)
+  # ---------------------------------------------------------------------------
+  adversarial-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: secureclaim-adversarial-api
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_SERVICE_NAME: secureclaim-adversarial-api
+    ports:
+      - "${ADVERSARIAL_API_PORT:-8081}:8080"
+    networks:
+      - default
+      - adversarial_net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      otel-collector:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8080/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    profiles:
+      - adversarial
+
+  adversarial-agent:
+    build:
+      context: adversarial_agent
+      dockerfile: Dockerfile
+    container_name: secureclaim-adversarial-agent
+    environment:
+      TARGET_API_URL: http://adversarial-api:8080
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      LOG_LEVEL: ${ADVERSARIAL_LOG_LEVEL:-INFO}
+      LOOP_INTERVAL_SECONDS: ${ADVERSARIAL_LOOP_INTERVAL:-300}
+      MONTHLY_SPEND_CAP_USD: ${MONTHLY_SPEND_CAP_USD:-50.0}
+      SPEND_LEDGER_PATH: /var/spend/ledger.json
+    volumes:
+      - adversarial_spend:/var/spend
+    networks:
+      - adversarial_net
+    depends_on:
+      adversarial-api:
+        condition: service_healthy
+    profiles:
+      - adversarial
+
 volumes:
   pgdata:
   chromadata:
   tempodata:
   grafanadata:
+  adversarial_spend:
+
+networks:
+  adversarial_net:
+    driver: bridge

@@ -1,4 +1,4 @@
-.PHONY: up down logs ps clean health migrate seed test-rls test-agent-roles test-audit-chain test-primitives verify-chain run trace-smoke build-pdf-sandbox test-pdf-sandbox build-image-sandbox test-image-sandbox test-vision-redaction test-pdf-hidden test-orchestrator test-prompt-registry test-parser-schemas test-intake-parser test-intake-actor test-identity-verifier-actor test-claims-processor-actor test-claims-processor-actor-live test-settlement-actor test-vertical-slice test-real-agents-e2e test-signed-envelopes test-capability-token-pipeline test-attack-suite test-classify-damage test-lookup-coverage test-score-fraud test-search-policy-docs test-search-fraud-rules test-inquiry-tools test-inquiry-actor test-faq-actor
+.PHONY: up down logs ps clean health migrate seed test-rls test-agent-roles test-audit-chain test-primitives verify-chain run trace-smoke build-pdf-sandbox test-pdf-sandbox build-image-sandbox test-image-sandbox test-vision-redaction test-pdf-hidden test-orchestrator test-prompt-registry test-parser-schemas test-intake-parser test-intake-actor test-identity-verifier-actor test-claims-processor-actor test-claims-processor-actor-live test-settlement-actor test-vertical-slice test-real-agents-e2e test-signed-envelopes test-capability-token-pipeline test-attack-suite test-classify-damage test-lookup-coverage test-score-fraud test-search-policy-docs test-search-fraud-rules test-inquiry-tools test-inquiry-actor test-faq-actor build-adversarial test-adversarial-sandbox test-adversarial-strategy test-showcase-submit test-spend-cap test-adversarial-sse adversarial-up adversarial-down
 
 up:
 	docker compose up -d --wait
@@ -145,6 +145,33 @@ test-inquiry-actor:
 
 test-faq-actor:
 	uv run pytest tests/unit/test_faq_actor.py -v -m unit
+
+build-adversarial:
+	docker build -t secureclaim-adversarial-api:latest -f Dockerfile .
+	docker build -t secureclaim-adversarial-agent:latest adversarial_agent/
+
+test-adversarial-sandbox:
+	uv run pytest tests/unit/test_adversarial_sandbox.py -v -m unit
+
+test-adversarial-strategy:
+	uv run pytest tests/unit/test_adversarial_strategy.py -v -m unit
+
+test-showcase-submit:
+	uv run pytest tests/unit/test_api_showcase_submit.py -v -m unit
+
+test-spend-cap:
+	uv run pytest tests/unit/test_spend_cap.py -v -m unit
+
+test-adversarial-sse:
+	uv run pytest tests/unit/test_adversarial_sse.py -v -m unit
+
+adversarial-up:
+	docker compose --profile adversarial up -d --build --wait
+	@echo "==> Adversarial sandbox running; agent logs:"
+	docker compose logs adversarial-agent --tail=20
+
+adversarial-down:
+	docker compose --profile adversarial down
 
 # Phase 1 milestone: all primitives tests passing (grows as sprints complete)
 test-primitives: test-rls test-agent-roles test-audit-chain
