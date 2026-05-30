@@ -10,9 +10,9 @@ from agent_system.identity.keys import KeypairManager
 from agent_system.ifc.labels import DataLabel, Labeled
 from agent_system.tools.capability_tokens import issue_token
 from agent_system.tools.implementations.claims_tools import (
-    _AUTO_APPROVE_LIMITS,
+    AUTO_APPROVE_LIMITS,
+    DEDUCTIBLES,
     _COVERAGE_TYPES,
-    _DEDUCTIBLES,
     _POLICY_TYPES,
     lookup_coverage,
 )
@@ -73,11 +73,11 @@ class TestLookupCoveragePure:
 
     def test_deductible_valid(self):
         result = lookup_coverage("CLM-deductible")
-        assert result.value["deductible"] in _DEDUCTIBLES
+        assert result.value["deductible"] in DEDUCTIBLES
 
     def test_auto_approve_limit_valid(self):
         result = lookup_coverage("CLM-approve")
-        assert result.value["auto_approve_limit"] in _AUTO_APPROVE_LIMITS
+        assert result.value["auto_approve_limit"] in AUTO_APPROVE_LIMITS
 
     def test_policy_status_active(self):
         result = lookup_coverage("CLM-status")

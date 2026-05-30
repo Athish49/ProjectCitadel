@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from typing import Protocol
 
+import psycopg
+
 from agent_system.orchestrator.budgets import (
     BudgetConfig,
     BudgetExceededError,
@@ -106,13 +108,18 @@ class Orchestrator:
         self,
         to_stage: ClaimStage,
         ctx: TransitionGuardContext,
+        *,
+        claim_id: str | None = None,
+        conn: psycopg.Connection | None = None,
     ) -> ClaimStage:
         """Attempt to advance from the current stage to *to_stage*.
 
-        On success: updates internal stage, emits stage_transition audit event,
-        returns the new stage.
+        On success: writes claim_stage to DB (if claim_id and conn are both
+        provided), updates internal stage, emits stage_transition audit event,
+        returns the new stage.  Caller must commit conn.
         On failure: emits transition_violation security audit event, re-raises
-        TransitionViolationError.
+        TransitionViolationError.  DB write is skipped on failure so no commit
+        is needed.
         """
         try:
             new_stage = advance_stage(self._stage, to_stage, ctx)
@@ -130,6 +137,13 @@ class Orchestrator:
                 security_event=True,
             )
             raise
+
+        if claim_id is not None and conn is not None:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE claims SET claim_stage = %s, updated_at = now() WHERE claim_id = %s",
+                    (new_stage.value, claim_id),
+                )
 
         self._stage = new_stage
         self._audit(

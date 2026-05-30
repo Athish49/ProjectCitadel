@@ -88,10 +88,10 @@ _POLICY_TYPES: list[str] = [
 _COVERAGE_TYPES: list[str] = ["BASIC", "STANDARD", "PREMIUM"]
 
 # Deductible tiers (dollars) — span seed range 250-2500.
-_DEDUCTIBLES: list[int] = [250, 500, 1000, 1500, 2500]
+DEDUCTIBLES: list[int] = [250, 500, 1000, 1500, 2500]
 
 # Auto-approve ceilings (dollars) — span seed range 5000-25000.
-_AUTO_APPROVE_LIMITS: list[int] = [5_000, 10_000, 15_000, 20_000, 25_000]
+AUTO_APPROVE_LIMITS: list[int] = [5_000, 10_000, 15_000, 20_000, 25_000]
 
 
 # ---------------------------------------------------------------------------
@@ -156,8 +156,8 @@ def lookup_coverage(claim_id: str) -> Labeled[dict]:
             "claim_id":           claim_id,
             "policy_type":        _POLICY_TYPES[h % len(_POLICY_TYPES)],
             "coverage_type":      _COVERAGE_TYPES[(h >> 8) % len(_COVERAGE_TYPES)],
-            "deductible":         _DEDUCTIBLES[(h >> 16) % len(_DEDUCTIBLES)],
-            "auto_approve_limit": _AUTO_APPROVE_LIMITS[(h >> 24) % len(_AUTO_APPROVE_LIMITS)],
+            "deductible":         DEDUCTIBLES[(h >> 16) % len(DEDUCTIBLES)],
+            "auto_approve_limit": AUTO_APPROVE_LIMITS[(h >> 24) % len(AUTO_APPROVE_LIMITS)],
             "policy_status":      "ACTIVE",
             "coverage_applicable": (h >> 32) % 6 != 0,
         },

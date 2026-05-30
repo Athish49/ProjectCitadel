@@ -781,3 +781,72 @@ class TestOrchestratorDispatchOnIntent:
         orch.dispatch_on_intent(ClaimIntent.faq)
         ev = next(e for e in events if e["action"] == "intent_routed")
         assert ev["agent_id"] == Orchestrator.AGENT_ID
+
+
+# ---------------------------------------------------------------------------
+# Orchestrator.request_transition — DB-write (task 4.2.4)
+# ---------------------------------------------------------------------------
+
+
+def _make_mock_conn():
+    conn = MagicMock()
+    cur = MagicMock()
+    cur.__enter__ = MagicMock(return_value=cur)
+    cur.__exit__ = MagicMock(return_value=False)
+    conn.cursor.return_value = cur
+    return conn, cur
+
+
+class TestOrchestratorTransitionDBWrite:
+    def _make_orch(self, initial: ClaimStage = ClaimStage.PROCESSING):
+        events: list[dict] = []
+
+        def _audit(*, agent_id, action, target, data_label, trace_id=None, details=None, security_event=False):
+            events.append({"agent_id": agent_id, "action": action, "target": target,
+                           "data_label": data_label, "details": details or {},
+                           "security_event": security_event})
+
+        orch = Orchestrator("db-write-sess", initial_stage=initial, audit_fn=_audit)
+        return orch, events
+
+    def test_writes_claim_stage_to_db_when_both_provided(self):
+        orch, _ = self._make_orch(ClaimStage.PROCESSING)
+        conn, cur = _make_mock_conn()
+        ctx = _full_processing_ctx()
+        orch.request_transition(ClaimStage.DECIDED, ctx, claim_id="CLM-db-001", conn=conn)
+        cur.execute.assert_called_once()
+        call_args = cur.execute.call_args
+        sql, params = call_args[0]
+        assert "UPDATE claims" in sql
+        assert "claim_stage" in sql
+        assert params[0] == ClaimStage.DECIDED.value
+        assert params[1] == "CLM-db-001"
+
+    def test_memory_stage_updated_after_db_write(self):
+        orch, _ = self._make_orch(ClaimStage.PROCESSING)
+        conn, _ = _make_mock_conn()
+        ctx = _full_processing_ctx()
+        orch.request_transition(ClaimStage.DECIDED, ctx, claim_id="CLM-db-002", conn=conn)
+        assert orch.stage == ClaimStage.DECIDED
+
+    def test_no_db_write_when_conn_is_none(self):
+        orch, _ = self._make_orch(ClaimStage.PROCESSING)
+        ctx = _full_processing_ctx()
+        orch.request_transition(ClaimStage.DECIDED, ctx, claim_id="CLM-db-003", conn=None)
+        assert orch.stage == ClaimStage.DECIDED
+
+    def test_no_db_write_when_claim_id_is_none(self):
+        orch, _ = self._make_orch(ClaimStage.PROCESSING)
+        conn, cur = _make_mock_conn()
+        ctx = _full_processing_ctx()
+        orch.request_transition(ClaimStage.DECIDED, ctx, claim_id=None, conn=conn)
+        cur.execute.assert_not_called()
+
+    def test_no_db_write_on_violation(self):
+        orch, _ = self._make_orch(ClaimStage.INTAKE)
+        conn, cur = _make_mock_conn()
+        ctx = _ctx()
+        with pytest.raises(TransitionViolationError):
+            orch.request_transition(ClaimStage.DECIDED, ctx, claim_id="CLM-db-004", conn=conn)
+        cur.execute.assert_not_called()
+        assert orch.stage == ClaimStage.INTAKE
