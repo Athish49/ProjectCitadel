@@ -171,7 +171,8 @@ class TestVerticalSliceHappyPath:
 
         # ── Step 1: Intake parser (P1 — quarantined, no tools) ──────────────
         _parser_json = json.dumps({
-            "schema_version": "intake@1",
+            "schema_version": "intake@2",
+            "intent": "new_claim",
             "incident_type": "collision",
             "incident_date": "2025-03-15",
             "incident_location": "Main St, Springfield",

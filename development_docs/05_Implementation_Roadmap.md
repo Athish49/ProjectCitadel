@@ -183,9 +183,9 @@ All four specialist agents are real (not stubs); the autonomous adversarial agen
 | 4.1.3 | `score_fraud(claim_id)` rule-based; returns SECRET-labelled full record | tool with SECRET propagation | 4 |
 | 4.1.4 | Confidential RAG retriever for policy docs (capability-gated) | tool | 3 |
 | 4.1.5 | Secret RAG retriever for fraud rules (separate credential) | tool | 3 |
-| 4.1.6 | Claims processor actor; composes assessment envelope | full actor end-to-end | 6 |
+| 4.1.6 | Claims processor actor; composes assessment envelope from 5 tools: classify_damage, lookup_coverage, score_fraud, search_policy_docs, search_fraud_rules (SECRET text stripped by actor before LLM sees it — P3 guard) | full actor end-to-end | 6 |
 | 4.1.7 | Extend intake parser schema for intent classification (`new_claim` / `faq` / `claim_status` / `policy_question` / `complaint`); orchestrator dispatches on intent | parser emits intent; orchestrator routes correctly | 3 |
-| 4.1.8 | Inquiry handlers in claims processor: RLS claim_status lookup; policy_question via RLS policy fetch + CONFIDENTIAL RAG | both inquiry tools wired end-to-end through egress filter | 5 |
+| 4.1.8 | Inquiry handlers in claims processor: RLS claim_status lookup; policy_question via RLS policy fetch + CONFIDENTIAL RAG. Implemented in `inquiry_actor.py` with `ACTOR_AGENT_ID = "claims_processor"` (same agent, separate sub-module). | both inquiry tools wired end-to-end through egress filter | 5 |
 | 4.1.9 | Complaint capture tool + `complaints` table writes + ESCALATED transition; FAQ handler in intake actor for pre-identity intent | inquiry flow end-to-end for all five intents | 4 |
 
 ### Sprint 4.2 — Real Settlement Actor (Week 5.5–6)

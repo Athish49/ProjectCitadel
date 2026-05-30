@@ -47,6 +47,7 @@ _VALID_EDGES: frozenset[tuple[ClaimStage, ClaimStage]] = frozenset({
     (ClaimStage.INTAKE,              ClaimStage.IDENTITY_PENDING),
     (ClaimStage.IDENTITY_PENDING,    ClaimStage.IDENTITY_VERIFIED),
     (ClaimStage.IDENTITY_VERIFIED,   ClaimStage.PROCESSING),
+    (ClaimStage.IDENTITY_VERIFIED,   ClaimStage.ESCALATED),   # complaint capture (task 4.1.9)
     (ClaimStage.PROCESSING,          ClaimStage.DECIDED),
     (ClaimStage.DECIDED,             ClaimStage.SETTLED),
     (ClaimStage.DECIDED,             ClaimStage.ESCALATED),
@@ -80,6 +81,9 @@ class TransitionGuardContext:
     # DECIDED → SETTLED / ESCALATED
     settlement_amount: float | None = None
     auto_approve_limit: float = 10_000.0
+
+    # IDENTITY_VERIFIED → ESCALATED (complaint path — task 4.1.9)
+    complaint_captured: bool = False
 
 
 class TransitionViolationError(ValueError):
@@ -152,6 +156,10 @@ def _check_guard(
                     f"settlement_amount={ctx.settlement_amount}, "
                     f"auto_approve_limit={ctx.auto_approve_limit}"
                 )
+
+        case (ClaimStage.IDENTITY_VERIFIED, ClaimStage.ESCALATED):
+            if not ctx.complaint_captured:
+                return "complaint_captured is False"
 
         # DECIDED → DENIED: orchestrator administrative override — no data guard.
         # IDENTITY_VERIFIED → PROCESSING: orchestrator-initiated — no data guard.

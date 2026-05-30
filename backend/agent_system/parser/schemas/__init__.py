@@ -1,6 +1,6 @@
 """Parser output schemas (P1 — task 2.1.1)."""
 from agent_system.parser.schemas.document import DocumentFieldsOutput, DocumentType
-from agent_system.parser.schemas.intake import IncidentType, IntakeOutput
+from agent_system.parser.schemas.intake import ClaimIntent, IncidentType, IntakeOutput
 from agent_system.parser.schemas.violations import SchemaViolationError, parse_strict
 from agent_system.parser.schemas.vision import (
     DamageSeverity,
@@ -9,6 +9,7 @@ from agent_system.parser.schemas.vision import (
 )
 
 __all__ = [
+    "ClaimIntent",
     "DocumentFieldsOutput",
     "DocumentType",
     "IncidentType",

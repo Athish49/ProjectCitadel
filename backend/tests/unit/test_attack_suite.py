@@ -39,7 +39,7 @@ from agent_system.orchestrator.transitions import (
     TransitionViolationError,
 )
 from agent_system.parser.intake_parser import run_intake_parser
-from agent_system.parser.schemas import IncidentType, IntakeOutput, SchemaViolationError
+from agent_system.parser.schemas import ClaimIntent, IncidentType, IntakeOutput, SchemaViolationError
 from agent_system.sanitisation.text import sanitise
 from agent_system.tools.capability_tokens import issue_token
 
@@ -53,7 +53,8 @@ pytestmark = pytest.mark.unit
 
 def _simple_intake(**overrides) -> IntakeOutput:
     base = dict(
-        schema_version="intake@1",
+        schema_version="intake@2",
+        intent=ClaimIntent.new_claim,
         incident_type=IncidentType.collision,
         incident_date=date(2025, 3, 15),
         incident_location="Main St, Springfield",
@@ -158,7 +159,8 @@ class TestAttack01DirectPromptInjection:
         mock_client = MagicMock()
 
         valid_json = json.dumps({
-            "schema_version": "intake@1",
+            "schema_version": "intake@2",
+            "intent": "new_claim",
             "incident_type": "collision",
             "incident_date": None,
             "incident_location": None,
@@ -217,7 +219,8 @@ class TestAttack01DirectPromptInjection:
         mock_client = MagicMock()
 
         valid_json = json.dumps({
-            "schema_version": "intake@1",
+            "schema_version": "intake@2",
+            "intent": "new_claim",
             "incident_type": "collision",
             "incident_date": None,
             "incident_location": None,

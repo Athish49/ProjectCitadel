@@ -25,7 +25,7 @@ from agent_system.actors.intake_actor import (
     run_intake_actor,
 )
 from agent_system.identity.keys import KeypairManager
-from agent_system.parser.schemas import IncidentType, IntakeOutput
+from agent_system.parser.schemas import ClaimIntent, IncidentType, IntakeOutput
 from agent_system.tools.capability_tokens import issue_token, persist_issuance
 
 pytestmark = pytest.mark.integration
@@ -44,7 +44,8 @@ def _admin() -> psycopg.Connection:
 
 def _simple_intake_output() -> IntakeOutput:
     return IntakeOutput(
-        schema_version="intake@1",
+        schema_version="intake@2",
+        intent=ClaimIntent.new_claim,
         incident_type=IncidentType.collision,
         incident_date=date(2025, 3, 15),
         incident_location="Main St, Springfield",

@@ -30,7 +30,8 @@ pytestmark = pytest.mark.unit
 
 def _valid_intake_json(**overrides) -> str:
     base = {
-        "schema_version": "intake@1",
+        "schema_version": "intake@2",
+        "intent": "new_claim",
         "incident_type": "collision",
         "incident_date": "2025-03-15",
         "incident_location": "Main St, Springfield",
@@ -208,7 +209,7 @@ class TestApiCallCorrectness:
         assert "<untrusted>" in _SYSTEM_PROMPT
 
     def test_system_prompt_contains_schema(self):
-        assert "intake@1" in _SYSTEM_PROMPT
+        assert "intake@2" in _SYSTEM_PROMPT
 
     def test_max_tokens_at_least_1024(self):
         client = _mock_client(_valid_intake_json())
@@ -237,7 +238,7 @@ class TestSchemaViolation:
         assert exc_info.value.error_kind == "invalid_json"
 
     def test_missing_required_field_raises(self):
-        incomplete = {"schema_version": "intake@1", "incident_type": "collision"}
+        incomplete = {"schema_version": "intake@2", "incident_type": "collision"}
         client = _mock_client(json.dumps(incomplete))
         with pytest.raises(SchemaViolationError) as exc_info:
             run_intake_parser("text", client=client)

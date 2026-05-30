@@ -18,6 +18,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from agent_system.parser.schemas.intake import ClaimIntent
 from agent_system.orchestrator.budgets import (
     BudgetConfig,
     BudgetExceededError,
@@ -25,6 +26,7 @@ from agent_system.orchestrator.budgets import (
     consume_tokens,
     consume_tool_call,
 )
+from agent_system.orchestrator.intent_routing import IntentRoute, dispatch_intent
 from agent_system.orchestrator.state import Orchestrator
 from agent_system.orchestrator.transitions import (
     ClaimStage,
@@ -275,6 +277,46 @@ class TestGuardFailures:
 # ---------------------------------------------------------------------------
 # Guard edge cases — escalation triggers
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# IDENTITY_VERIFIED → ESCALATED — complaint path (task 4.1.9)
+# ---------------------------------------------------------------------------
+
+
+class TestComplaintEscalationPath:
+    def test_identity_verified_to_escalated_happy_path(self):
+        ctx = _ctx(complaint_captured=True)
+        result = advance_stage(ClaimStage.IDENTITY_VERIFIED, ClaimStage.ESCALATED, ctx)
+        assert result is ClaimStage.ESCALATED
+
+    def test_identity_verified_to_escalated_guard_fails_without_complaint(self):
+        ctx = _ctx(complaint_captured=False)
+        with pytest.raises(TransitionViolationError) as exc_info:
+            advance_stage(ClaimStage.IDENTITY_VERIFIED, ClaimStage.ESCALATED, ctx)
+        assert "complaint_captured" in str(exc_info.value)
+
+    def test_identity_verified_to_escalated_guard_default_false(self):
+        """Default TransitionGuardContext must block IDENTITY_VERIFIED→ESCALATED."""
+        ctx = _ctx()  # complaint_captured defaults to False
+        with pytest.raises(TransitionViolationError):
+            advance_stage(ClaimStage.IDENTITY_VERIFIED, ClaimStage.ESCALATED, ctx)
+
+    def test_identity_verified_to_processing_unaffected(self):
+        """Adding the complaint edge must not break the existing processing path."""
+        ctx = _ctx()
+        assert advance_stage(ClaimStage.IDENTITY_VERIFIED, ClaimStage.PROCESSING, ctx) is ClaimStage.PROCESSING
+
+    def test_identity_verified_allowed_next_includes_escalated(self):
+        nxt = allowed_next_stages(ClaimStage.IDENTITY_VERIFIED)
+        assert ClaimStage.ESCALATED in nxt
+        assert ClaimStage.PROCESSING in nxt
+
+    def test_decided_escalated_guard_still_requires_trigger(self):
+        """DECIDED→ESCALATED guard should be unaffected by complaint_captured field."""
+        ctx = _ctx(fraud_decision="CLEAR", settlement_amount=500.0, complaint_captured=True)
+        with pytest.raises(TransitionViolationError):
+            advance_stage(ClaimStage.DECIDED, ClaimStage.ESCALATED, ctx)
 
 
 class TestEscalationGuardEdgeCases:
@@ -654,3 +696,88 @@ class TestOrchestratorNoOpAudit:
         orch = Orchestrator("s1")
         with pytest.raises(TransitionViolationError):
             orch.request_transition(ClaimStage.DECIDED, _ctx())
+
+
+# ---------------------------------------------------------------------------
+# dispatch_intent — pure routing logic (task 4.1.7)
+# ---------------------------------------------------------------------------
+
+
+class TestDispatchIntent:
+    def test_new_claim_routes_to_claim_filing(self):
+        assert dispatch_intent(ClaimIntent.new_claim) == IntentRoute.claim_filing
+
+    def test_faq_routes_to_faq_response(self):
+        assert dispatch_intent(ClaimIntent.faq) == IntentRoute.faq_response
+
+    def test_claim_status_routes_to_inquiry(self):
+        assert dispatch_intent(ClaimIntent.claim_status) == IntentRoute.inquiry
+
+    def test_policy_question_routes_to_inquiry(self):
+        assert dispatch_intent(ClaimIntent.policy_question) == IntentRoute.inquiry
+
+    def test_complaint_routes_to_complaint_capture(self):
+        assert dispatch_intent(ClaimIntent.complaint) == IntentRoute.complaint_capture
+
+    def test_claim_status_and_policy_question_share_route(self):
+        assert (
+            dispatch_intent(ClaimIntent.claim_status)
+            == dispatch_intent(ClaimIntent.policy_question)
+        )
+
+    def test_all_intents_are_mapped(self):
+        for intent in ClaimIntent:
+            route = dispatch_intent(intent)
+            assert isinstance(route, IntentRoute)
+
+
+# ---------------------------------------------------------------------------
+# Orchestrator.dispatch_on_intent — audit integration (task 4.1.7)
+# ---------------------------------------------------------------------------
+
+
+class TestOrchestratorDispatchOnIntent:
+    def _make_orch(self):
+        audit_calls: list[dict] = []
+
+        def _audit(**kwargs):
+            audit_calls.append(kwargs)
+
+        orch = Orchestrator("sess-intent-01", audit_fn=_audit)
+        return orch, audit_calls
+
+    def test_returns_correct_route(self):
+        orch, _ = self._make_orch()
+        assert orch.dispatch_on_intent(ClaimIntent.new_claim) == IntentRoute.claim_filing
+
+    def test_claim_status_returns_inquiry(self):
+        orch, _ = self._make_orch()
+        assert orch.dispatch_on_intent(ClaimIntent.claim_status) == IntentRoute.inquiry
+
+    def test_policy_question_returns_inquiry(self):
+        orch, _ = self._make_orch()
+        assert orch.dispatch_on_intent(ClaimIntent.policy_question) == IntentRoute.inquiry
+
+    def test_emits_intent_routed_audit_event(self):
+        orch, events = self._make_orch()
+        orch.dispatch_on_intent(ClaimIntent.faq)
+        assert any(e["action"] == "intent_routed" for e in events)
+
+    def test_audit_event_contains_intent_and_route(self):
+        orch, events = self._make_orch()
+        orch.dispatch_on_intent(ClaimIntent.complaint)
+        ev = next(e for e in events if e["action"] == "intent_routed")
+        assert ev["details"]["intent"] == "complaint"
+        assert ev["details"]["route"] == "complaint_capture"
+
+    def test_audit_event_not_security_event(self):
+        orch, events = self._make_orch()
+        orch.dispatch_on_intent(ClaimIntent.new_claim)
+        ev = next(e for e in events if e["action"] == "intent_routed")
+        assert ev["security_event"] is False
+
+    def test_audit_event_agent_id_is_orchestrator(self):
+        orch, events = self._make_orch()
+        orch.dispatch_on_intent(ClaimIntent.faq)
+        ev = next(e for e in events if e["action"] == "intent_routed")
+        assert ev["agent_id"] == Orchestrator.AGENT_ID

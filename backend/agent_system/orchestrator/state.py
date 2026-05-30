@@ -20,12 +20,14 @@ from agent_system.orchestrator.budgets import (
     consume_tokens,
     consume_tool_call,
 )
+from agent_system.orchestrator.intent_routing import IntentRoute, dispatch_intent
 from agent_system.orchestrator.transitions import (
     ClaimStage,
     TransitionGuardContext,
     TransitionViolationError,
     advance_stage,
 )
+from agent_system.parser.schemas.intake import ClaimIntent
 
 
 class AuditFn(Protocol):
@@ -162,6 +164,19 @@ class Orchestrator:
                 security_event=True,
             )
             raise
+
+    def dispatch_on_intent(self, intent: ClaimIntent) -> IntentRoute:
+        """Route *intent* to an IntentRoute and emit an intent_routed audit event."""
+        route = dispatch_intent(intent)
+        self._audit(
+            agent_id=self.AGENT_ID,
+            action="intent_routed",
+            target=self._session_id,
+            data_label="INTERNAL",
+            details={"intent": intent.value, "route": route.value},
+            security_event=False,
+        )
+        return route
 
     def record_tool_call(self, agent_id: str) -> None:
         """Charge one tool call against *agent_id*'s budget.

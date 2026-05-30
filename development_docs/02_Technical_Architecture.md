@@ -183,8 +183,8 @@ Each actor receives only structured envelopes from the orchestrator. None reads 
 |----------|-------|
 | **Role** | Compose the structured assessment: damage classification, coverage applicability, fraud signal. Each is fetched via a deterministic tool, not reasoned about. |
 | **Model** | Claude Sonnet 4.6 (the most reasoning-heavy actor) |
-| **Tools** | `classify_damage(evidence_ref)` (returns stub-deterministic label), `lookup_coverage(claim_id)`, `score_fraud(claim_id)` (returns CLEAR/FLAG/DENY only — never the score), `search_policy_docs(query)` (CONFIDENTIAL RAG) |
-| **Data label access** | CONFIDENTIAL within own claim scope. Cannot read SECRET. |
+| **Tools** | `classify_damage(evidence_ref)` (returns stub-deterministic label), `lookup_coverage(claim_id)`, `score_fraud(claim_id)` (returns CLEAR/FLAG/DENY only — never the score), `search_policy_docs(query)` (CONFIDENTIAL RAG), `search_fraud_rules(query)` (SECRET corpus; only rule references — doc_id, source, score — are forwarded to LLM context, not rule text). Also handles all inquiry intents (claim_status, policy_question, complaint) as sub-workflows in `inquiry_actor.py`. |
+| **Data label access** | CONFIDENTIAL within own claim scope. Cannot surface SECRET content to the LLM context or customer output. SECRET-labelled tool results (score_fraud, search_fraud_rules) are metadata-stripped before the LLM sees them — the actor runtime reads the result and forwards only safe fields (decision, rule references). |
 | **Output** | Structured assessment envelope to the orchestrator. Free-text rationale is generated separately and runs through the egress filter. |
 
 #### 2.3.4 Settlement Actor
@@ -544,9 +544,10 @@ secureclaim-ai/
 │   │   ├── document_parser.py
 │   │   └── schemas/                    # strict JSON schemas
 │   ├── actors/                         # privileged actor LLMs
-│   │   ├── intake_actor.py
+│   │   ├── intake_actor.py             # intake + FAQ intent
 │   │   ├── identity_verifier.py
-│   │   ├── claims_processor.py
+│   │   ├── claims_processor_actor.py   # claim assessment
+│   │   ├── inquiry_actor.py            # inquiry intents (claim_status, policy_question, complaint) — ACTOR_AGENT_ID = "claims_processor"
 │   │   └── settlement_actor.py
 │   ├── tools/
 │   │   ├── registry.py                 # capability-token enforcement

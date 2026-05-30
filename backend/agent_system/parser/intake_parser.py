@@ -134,7 +134,7 @@ def run_intake_parser(
     if message.stop_reason != "end_turn":
         exc = SchemaViolationError(
             f"Parser response did not complete (stop_reason={message.stop_reason!r})",
-            schema_name="intake@1",
+            schema_name="intake@2",
             field_path=None,
             error_kind="invalid_json",
             raw_excerpt=response_text,
@@ -154,6 +154,7 @@ def run_intake_parser(
         target=session_id,
         data_label="UNTRUSTED",
         details={
+            "intent": result.intent.value,
             "incident_type": result.incident_type.value,
             "intake_complete": result.intake_complete,
         },

@@ -20,14 +20,23 @@ class IncidentType(str, Enum):
     other = "other"
 
 
+class ClaimIntent(str, Enum):
+    new_claim = "new_claim"
+    faq = "faq"
+    claim_status = "claim_status"
+    policy_question = "policy_question"
+    complaint = "complaint"
+
+
 class IntakeOutput(BaseModel):
     """Structured claim intake extracted from claimant's free-form submission."""
 
-    _schema_name: ClassVar[str] = "intake@1"
+    _schema_name: ClassVar[str] = "intake@2"
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    schema_version: Literal["intake@1"]
+    schema_version: Literal["intake@2"]
+    intent: ClaimIntent
     incident_type: IncidentType
     incident_date: date | None
     incident_location: str | None

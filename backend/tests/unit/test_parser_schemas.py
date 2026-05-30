@@ -30,7 +30,8 @@ pytestmark = pytest.mark.unit
 
 def _intake(**overrides) -> dict:
     base = {
-        "schema_version": "intake@1",
+        "schema_version": "intake@2",
+        "intent": "new_claim",
         "incident_type": "collision",
         "incident_date": "2025-03-15",
         "incident_location": "Main St, Springfield",
@@ -199,7 +200,7 @@ class TestIntakeOutputHappyPath:
 
     def test_schema_version_literal(self):
         obj = parse_strict(json.dumps(_intake()), IntakeOutput)
-        assert obj.schema_version == "intake@1"
+        assert obj.schema_version == "intake@2"
 
     def test_damage_description_max_500(self):
         data = _intake(damage_description="x" * 500)
@@ -233,7 +234,7 @@ class TestIntakeOutputFailures:
         assert exc_info.value.error_kind in ("type", "value")
 
     def test_wrong_schema_version_raises(self):
-        data = _intake(schema_version="intake@2")
+        data = _intake(schema_version="intake@9")
         with pytest.raises(SchemaViolationError):
             parse_strict(json.dumps(data), IntakeOutput)
 

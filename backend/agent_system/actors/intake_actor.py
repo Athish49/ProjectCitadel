@@ -4,6 +4,9 @@ Public API:
   run_intake_actor(intake_output, *, pre_issued_tokens, orchestrator_public_key,
                    client, audit_fn, session_id, conn=None) -> IntakeEnvelope
 
+  run_faq_actor(query, *, pre_issued_tokens, orchestrator_public_key,
+                client, audit_fn, session_id, conn=None) -> FaqEnvelope
+
 Design:
   - Model: Claude Haiku 4.5; temperature=0.
   - Receives structured IntakeOutput from the quarantined parser (never raw text).
@@ -16,6 +19,9 @@ Design:
     tool audit rows written by registry (no duplicate _audit calls for tool events).
   - When conn is None: legacy verify_token() path — unit tests; no DB required.
   - Outcome determined by which terminal tool was called (deterministic code, not LLM).
+  - run_faq_actor handles ClaimIntent.faq (pre-identity) using search_public_faq.
+    It is intentionally separate from run_intake_actor's loop so FAQ responses
+    can be served without advancing the claim stage.
 """
 from __future__ import annotations
 
@@ -26,9 +32,13 @@ from typing import Any, Callable, Protocol
 import anthropic
 import psycopg
 
+from agent_system.egress.filter import filter_output
+from agent_system.ifc.labels import DataLabel, Label
 from agent_system.parser.schemas import IntakeOutput
 from agent_system.tools.capability_tokens import CapabilityToken, verify_token
 from agent_system.tools.registry import ToolRegistry
+
+_LABEL_PUBLIC = Label(level=DataLabel.PUBLIC, untrusted=False)
 
 ACTOR_MODEL = "claude-haiku-4-5-20251001"
 ACTOR_AGENT_ID = "intake_actor"
@@ -57,6 +67,21 @@ class IntakeEnvelope:
     structured_summary: str | None
     missing_fields: tuple[str, ...]
     session_id: str
+
+
+@dataclass(frozen=True)
+class FaqEnvelope:
+    """Structured output produced by run_faq_actor.
+
+    response_text : customer-visible FAQ answer (egress-filtered when conn provided).
+    session_id    : session identifier for audit correlation.
+    filter_ok     : True if egress filter passed unchanged or filter was skipped
+                    (conn=None); False if filter blocked or modified the output.
+    """
+
+    response_text: str
+    session_id: str
+    filter_ok: bool
 
 
 # ---------------------------------------------------------------------------
@@ -424,4 +449,230 @@ def run_intake_actor(
         structured_summary=structured_summary,
         missing_fields=tuple(missing_fields),
         session_id=session_id,
+    )
+
+
+# ---------------------------------------------------------------------------
+# FAQ actor (task 4.1.9) — handles ClaimIntent.faq (pre-identity)
+# ---------------------------------------------------------------------------
+
+_TOOLS_FAQ: list[dict[str, Any]] = [
+    {
+        "name": "search_public_faq",
+        "description": "Search the public FAQ for insurance-related policy information.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Natural-language search query.",
+                }
+            },
+            "required": ["query"],
+        },
+    },
+]
+
+_SYSTEM_FAQ = """\
+You are a customer-service agent for a vehicle insurance claims system.
+The customer has a general question about insurance.
+
+Call search_public_faq to find relevant FAQ entries, then produce a clear,
+helpful response based on the FAQ content.
+Keep the response factual and under 200 words.\
+"""
+
+_FAQ_HANDLERS: dict[str, Callable[..., dict[str, Any]]] = {
+    "search_public_faq": _handle_search_public_faq,
+}
+
+MAX_FAQ_LOOP_ITERATIONS = 4
+
+
+def run_faq_actor(
+    query: str,
+    *,
+    pre_issued_tokens: dict[str, CapabilityToken],
+    orchestrator_public_key: bytes,
+    client: anthropic.Anthropic | None = None,
+    audit_fn: AuditFn | None = None,
+    session_id: str = "unknown",
+    conn: psycopg.Connection | None = None,
+) -> FaqEnvelope:
+    """Run the FAQ actor to answer a pre-identity customer query.
+
+    Uses the existing search_public_faq tool (already in _REGISTRY).
+    Applies P10 egress filter when conn is provided; skips when conn=None.
+
+    pre_issued_tokens: must include a token for "search_public_faq".
+    orchestrator_public_key: 32-byte Ed25519 key for token verification.
+
+    Returns FaqEnvelope with egress-filtered response_text.
+    Raises anthropic.APIError on API failure (caller handles).
+    """
+    _client = client or anthropic.Anthropic()
+    _audit: AuditFn = audit_fn if audit_fn is not None else _noop_audit  # type: ignore[assignment]
+
+    user_message = (
+        f"The customer asks: {query!r}. "
+        f"Search the FAQ for relevant information, then provide a clear, helpful answer."
+    )
+    messages: list[dict[str, Any]] = [{"role": "user", "content": user_message}]
+    last_response: anthropic.types.Message | None = None
+
+    for _iteration in range(MAX_FAQ_LOOP_ITERATIONS):
+        response = _client.messages.create(
+            model=ACTOR_MODEL,
+            max_tokens=_MAX_TOKENS,
+            temperature=0,
+            system=_SYSTEM_FAQ,
+            tools=_TOOLS_FAQ,
+            messages=messages,
+        )
+        last_response = response
+
+        if response.stop_reason != "tool_use":
+            break
+
+        messages.append({"role": "assistant", "content": response.content})
+        tool_results: list[dict[str, Any]] = []
+
+        for block in response.content:
+            if getattr(block, "type", None) != "tool_use":
+                continue
+
+            tool_name: str = block.name
+            tool_input: dict[str, Any] = block.input
+
+            # ── P4 capability token gate ─────────────────────────────────
+            token = pre_issued_tokens.get(tool_name)
+            if token is None:
+                _audit(
+                    agent_id=ACTOR_AGENT_ID,
+                    action="tool_call_denied",
+                    target=session_id,
+                    data_label="PUBLIC",
+                    details={"tool": tool_name, "deny_reason": "no_token_issued"},
+                    security_event=True,
+                )
+                tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": block.id,
+                    "content": "Error: no capability token for this tool.",
+                    "is_error": True,
+                })
+                continue
+
+            if conn is not None:
+                invoke_result = _REGISTRY.invoke(
+                    conn,
+                    token=token,
+                    calling_agent_id=ACTOR_AGENT_ID,
+                    tool_name=tool_name,
+                    params=tool_input,
+                    orchestrator_public_key=orchestrator_public_key,
+                )
+                conn.commit()
+                if not invoke_result.ok:
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": "Error: capability token verification failed.",
+                        "is_error": True,
+                    })
+                    continue
+                result = invoke_result.value
+            else:
+                vr = verify_token(
+                    token,
+                    calling_agent_id=ACTOR_AGENT_ID,
+                    tool=tool_name,
+                    params=tool_input,
+                    orchestrator_public_key=orchestrator_public_key,
+                )
+                if not vr:
+                    _audit(
+                        agent_id=ACTOR_AGENT_ID,
+                        action="tool_call_denied",
+                        target=session_id,
+                        data_label="PUBLIC",
+                        details={"tool": tool_name, "deny_reason": vr.deny_reason.value},
+                        security_event=True,
+                    )
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": "Error: capability token verification failed.",
+                        "is_error": True,
+                    })
+                    continue
+
+                handler = _FAQ_HANDLERS.get(tool_name)
+                if handler is None:
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": "Error: unknown tool.",
+                        "is_error": True,
+                    })
+                    continue
+
+                result = handler(**tool_input)
+                _audit(
+                    agent_id=ACTOR_AGENT_ID,
+                    action="tool_call_ok",
+                    target=session_id,
+                    data_label="PUBLIC",
+                    details={"tool": tool_name},
+                    security_event=False,
+                )
+            # ─────────────────────────────────────────────────────────────
+
+            tool_results.append({
+                "type": "tool_result",
+                "tool_use_id": block.id,
+                "content": json.dumps(result),
+            })
+
+        messages.append({"role": "user", "content": tool_results})
+
+    # ── Extract LLM-generated response text ─────────────────────────────────
+    response_text = ""
+    if last_response is not None:
+        for block in last_response.content:
+            if getattr(block, "type", None) == "text":
+                response_text += block.text
+
+    if not response_text:
+        response_text = "I was unable to find an answer to your question. Please contact our support team."
+
+    # ── P10 egress filter ────────────────────────────────────────────────────
+    filter_ok = True
+    if conn is not None:
+        fr = filter_output(
+            conn,
+            text=response_text,
+            source_label=_LABEL_PUBLIC,
+            calling_agent_id=ACTOR_AGENT_ID,
+        )
+        conn.commit()
+        filter_ok = fr.ok
+        response_text = fr.output
+
+    _audit(
+        agent_id=ACTOR_AGENT_ID,
+        action="faq_response",
+        target=session_id,
+        data_label="PUBLIC",
+        details={
+            "filter_ok": filter_ok,
+            "response_length": len(response_text),
+        },
+        security_event=False,
+    )
+
+    return FaqEnvelope(
+        response_text=response_text,
+        session_id=session_id,
+        filter_ok=filter_ok,
     )
