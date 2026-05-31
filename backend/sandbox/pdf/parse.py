@@ -133,6 +133,8 @@ def _extract_pages(pdf_bytes: bytes) -> list[dict[str, Any]]:
     pages: list[dict[str, Any]] = []
     with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
         for page in pdf.pages:
+            pw = float(page.width)
+            ph = float(page.height)
             chars: list[dict[str, Any]] = []
             for ch in page.chars:
                 chars.append(
@@ -142,8 +144,8 @@ def _extract_pages(pdf_bytes: bytes) -> list[dict[str, Any]]:
                         "y0": ch.get("y0", 0.0),
                         "x1": ch.get("x1", 0.0),
                         "y1": ch.get("y1", 0.0),
-                        "page_width": ch.get("page_width", 0.0),
-                        "page_height": ch.get("page_height", 0.0),
+                        "page_width": pw,
+                        "page_height": ph,
                         "font_size": ch.get("size", 0.0),
                         "font_name": ch.get("fontname", ""),
                         "non_stroking_color": ch.get("non_stroking_color"),
