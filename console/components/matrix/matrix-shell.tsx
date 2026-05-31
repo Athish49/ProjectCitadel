@@ -2,9 +2,9 @@
 
 import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
+import { ChevronUp, ChevronDown, ChevronsUpDown, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { MatrixRow, MatrixClass, AttackCategory, PatternId, MatrixStatus } from "@/lib/types/showcase";
+import type { MatrixRow, MatrixClass, AttackCategory, PatternId, MatrixStatus, CIResults } from "@/lib/types/showcase";
 
 // ── Derived status ────────────────────────────────────────────────────────────
 
@@ -155,6 +155,66 @@ function SortHeader({
   );
 }
 
+// ── CI Status Bar ─────────────────────────────────────────────────────────────
+
+function CIStatusBar({ ci }: { ci: CIResults }) {
+  const unitFailed = ci.unit.failed;
+  const intFailed  = ci.integration?.failed ?? 0;
+  const anyFailed  = unitFailed + intFailed > 0;
+
+  const unitTotal  = ci.unit.total;
+  const intTotal   = ci.integration?.total ?? null;
+
+  const diff = Date.now() - new Date(ci.timestamp).getTime();
+  const m = Math.floor(diff / 60_000);
+  const ago =
+    m < 2    ? "just now"
+    : m < 60  ? `${m}m ago`
+    : m < 1440 ? `${Math.floor(m / 60)}h ago`
+    : `${Math.floor(m / 1440)}d ago`;
+
+  const dotColor  = anyFailed ? "bg-[#F25B5B]" : "bg-[#4ADE80]";
+  const textColor = anyFailed ? "text-[#F25B5B]" : "text-[#4ADE80]";
+  const label     = anyFailed ? "failing" : "passing";
+
+  const attacksCovered = Object.keys(ci.attack_coverage).length;
+
+  return (
+    <div className="flex items-center gap-3 rounded border border-[#1E2632] bg-[#0B1018] px-4 py-2 font-mono text-[10px]">
+      <span className={cn("h-1.5 w-1.5 rounded-full flex-shrink-0", dotColor)} />
+      <span className="text-[#8B96A8]">CI</span>
+      <span className="text-[#E8EDF2]">{ci.branch}</span>
+      <span className="text-[#3A4452]">·</span>
+      <span className="text-[#8B96A8]">{ago}</span>
+      <span className="text-[#3A4452]">·</span>
+      <span className="tabular-nums text-[#A8B4C0]">
+        {ci.unit.passed}/{unitTotal} unit
+        {intTotal !== null && ` · ${ci.integration!.passed}/${intTotal} integration`}
+      </span>
+      <span className="text-[#3A4452]">·</span>
+      <span className={cn("tabular-nums", textColor)}>{label}</span>
+      <span className="text-[#3A4452]">·</span>
+      <span className="text-[#8B96A8]">{attacksCovered} attack IDs covered</span>
+      {ci.commit_short && (
+        <>
+          <span className="text-[#3A4452]">·</span>
+          <span className="text-[#3A4452] tabular-nums">{ci.commit_short}</span>
+        </>
+      )}
+      {ci.run_url && (
+        <a
+          href={ci.run_url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="ml-auto flex items-center gap-1 text-[#5BB5F2] hover:text-[#7ECAF5] transition-colors"
+        >
+          view run <ExternalLink className="h-2.5 w-2.5" />
+        </a>
+      )}
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 interface MatrixShellProps {
@@ -162,9 +222,10 @@ interface MatrixShellProps {
   initialClass?:    MatrixClass    | null;
   initialPattern?:  PatternId      | null;
   initialCategory?: AttackCategory | null;
+  ciResults?:       CIResults      | null;
 }
 
-export function MatrixShell({ rows, initialClass, initialPattern, initialCategory }: MatrixShellProps) {
+export function MatrixShell({ rows, initialClass, initialPattern, initialCategory, ciResults }: MatrixShellProps) {
   const router = useRouter();
 
   const [classFilter,    setClassFilter]    = useState<MatrixClass    | null>(initialClass    ?? null);
@@ -217,6 +278,13 @@ export function MatrixShell({ rows, initialClass, initialPattern, initialCategor
           ))}
         </div>
       </div>
+
+      {/* CI status bar */}
+      {ciResults && (
+        <div className="border-b border-[#1E2632] px-6 py-3">
+          <CIStatusBar ci={ciResults} />
+        </div>
+      )}
 
       {/* filters */}
       <div className="space-y-2 border-b border-[#1E2632] px-6 py-4">

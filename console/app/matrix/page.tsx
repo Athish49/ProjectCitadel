@@ -1,9 +1,20 @@
+import { readFileSync } from "fs";
+import { join } from "path";
 import { ATTACKS, toMatrixRow } from "@/lib/data/attacks";
 import { MatrixShell } from "@/components/matrix/matrix-shell";
-import type { MatrixClass, AttackCategory, PatternId } from "@/lib/types/showcase";
+import type { MatrixClass, AttackCategory, PatternId, CIResults } from "@/lib/types/showcase";
 
 interface PageProps {
   searchParams: Promise<{ class?: string; pattern?: string; category?: string }>;
+}
+
+function loadCIResults(): CIResults | null {
+  try {
+    const raw = readFileSync(join(process.cwd(), "public", "ci-test-results.json"), "utf-8");
+    return JSON.parse(raw) as CIResults;
+  } catch {
+    return null;
+  }
 }
 
 export default async function MatrixPage({ searchParams }: PageProps) {
@@ -17,12 +28,15 @@ export default async function MatrixPage({ searchParams }: PageProps) {
   const initialPattern  = VALID_PATTERNS.includes(pattern as PatternId)  ? (pattern as PatternId)  : null;
   const initialCategory = category ? (decodeURIComponent(category) as AttackCategory) : null;
 
+  const ciResults = loadCIResults();
+
   return (
     <MatrixShell
       rows={rows}
       initialClass={initialClass}
       initialPattern={initialPattern}
       initialCategory={initialCategory}
+      ciResults={ciResults}
     />
   );
 }

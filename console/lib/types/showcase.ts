@@ -119,3 +119,27 @@ export interface ErrorResponse {
   error: string;
   detail?: string;
 }
+
+export interface CITestSuite {
+  total: number;
+  passed: number;
+  failed: number;
+  duration_seconds: number;
+}
+
+export interface CIAttackCoverage {
+  tests: number;
+  passed: number;
+  failed: number;
+}
+
+export interface CIResults {
+  timestamp: string;
+  commit: string;
+  commit_short: string;
+  branch: string;
+  run_url: string;
+  unit: CITestSuite;
+  integration: CITestSuite | null;
+  attack_coverage: Record<string, CIAttackCoverage>;
+}
