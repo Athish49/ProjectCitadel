@@ -1,4 +1,4 @@
-.PHONY: up down logs ps clean health migrate seed test-rls test-agent-roles test-audit-chain test-primitives verify-chain run trace-smoke build-pdf-sandbox test-pdf-sandbox build-image-sandbox test-image-sandbox test-vision-redaction test-pdf-hidden test-orchestrator test-prompt-registry test-parser-schemas test-intake-parser test-intake-actor test-identity-verifier-actor test-claims-processor-actor test-claims-processor-actor-live test-settlement-actor test-vertical-slice test-real-agents-e2e test-signed-envelopes test-capability-token-pipeline test-attack-suite test-classify-damage test-lookup-coverage test-score-fraud test-search-policy-docs test-search-fraud-rules test-inquiry-tools test-inquiry-actor test-faq-actor build-adversarial test-adversarial-sandbox test-adversarial-strategy test-showcase-submit test-spend-cap test-adversarial-sse adversarial-up adversarial-down test-cross-customer-probes test-egress-probes test-cap-token-bypass-probes test-arch-assertions ci-unit ci-report
+.PHONY: up down logs ps clean health migrate seed test-rls test-agent-roles test-audit-chain test-primitives verify-chain run trace-smoke build-pdf-sandbox test-pdf-sandbox build-image-sandbox test-image-sandbox test-vision-redaction test-pdf-hidden test-orchestrator test-prompt-registry test-parser-schemas test-intake-parser test-intake-actor test-identity-verifier-actor test-claims-processor-actor test-claims-processor-actor-live test-settlement-actor test-vertical-slice test-real-agents-e2e test-signed-envelopes test-capability-token-pipeline test-attack-suite test-classify-damage test-lookup-coverage test-score-fraud test-search-policy-docs test-search-fraud-rules test-inquiry-tools test-inquiry-actor test-faq-actor build-adversarial test-adversarial-sandbox test-adversarial-strategy test-showcase-submit test-spend-cap test-adversarial-sse adversarial-up adversarial-down test-cross-customer-probes test-egress-probes test-cap-token-bypass-probes test-arch-assertions formal-check formal-conformance ci-unit ci-report
 
 up:
 	docker compose up -d --wait
@@ -187,6 +187,12 @@ adversarial-down:
 
 test-arch-assertions:
 	uv run pytest tests/unit/test_architectural_assertions.py -v -m unit
+
+formal-check:
+	uv run pytest tests/unit/test_spec_invariants.py -v -m unit
+
+formal-conformance:
+	uv run pytest tests/unit/test_formal_conformance.py -v -m unit
 
 ci-unit:
 	uv run pytest tests/unit/ -m unit \

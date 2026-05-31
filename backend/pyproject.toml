@@ -44,6 +44,7 @@ select = ["E", "F", "I", "B", "UP", "SIM"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+pythonpath = ["."]
 markers = [
     "integration: requires a running database (make up && make migrate)",
     "unit: pure unit tests with no external dependencies",

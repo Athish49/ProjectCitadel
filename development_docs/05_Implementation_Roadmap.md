@@ -232,9 +232,9 @@ Every attack category in the taxonomy is either live-tested with numbers, archit
 
 | # | Task | Output | Hours |
 |---|------|--------|-------|
-| 5.2.1 | TLA+ spec for workflow state machine | `formal/workflow.tla` | 6 |
-| 5.2.2 | TLC model-check core invariants | `make formal-check` passes | 4 |
-| 5.2.3 | Conformance test: enumerate reachable states in implementation; assert match against spec | conformance test passes | 4 |
+| 5.2.1 | TLA+ spec for workflow state machine | `formal/workflow.tla` (8 state variables, 11 transitions, 4 invariants) | 6 |
+| 5.2.2 | Python BFS exhaustive model-checker for spec invariants (TypeOK, ClosedIsAbsorbing, ForwardProgress, EventualClosure) | `make formal-check` passes (30 tests, `formal/check_spec.py`) | 4 |
+| 5.2.3 | Conformance test: drive real `advance_stage()` against spec edge set — all 11 valid edges accepted, all 70 invalid pairs rejected, guard boundaries verified | `make formal-conformance` passes (102 tests, `tests/unit/test_formal_conformance.py`) | 4 |
 | 5.2.4 | Console page rendering spec invariants with last-check timestamp | "Formal" tab in Console | 3 |
 
 ### Sprint 5.3 — Documentation & Residual Risk (Week 8.5–9)
@@ -335,7 +335,7 @@ Phase 6 polish, accessibility, launch
 | Console UI library | shadcn/ui, MUI, Mantine, custom | shadcn/ui | Professional baseline; full customisation; matches dark monospace aesthetic |
 | Diagrams | React Flow, Mermaid, D3 | React Flow for interactive; Mermaid for docs | Interactive needed for explorer |
 | Observability | OTel, custom logs | OpenTelemetry → Tempo + Grafana | Industry-standard; demonstrable; traces feed Console |
-| Formal method | TLA+, Alloy, Lean | TLA+ (TLC model-checker) | Best documented for workflow specs; PlusCal is approachable |
+| Formal method | TLA+, Alloy, Lean | TLA+ spec + Python BFS checker | TLA+ spec (`formal/workflow.tla`) gives a machine-readable formal artifact; exhaustive verification via Python BFS (`formal/check_spec.py`) instead of TLC/JVM — same coverage, no Java dependency |
 
 ---
 

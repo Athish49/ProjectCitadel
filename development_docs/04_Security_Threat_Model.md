@@ -194,36 +194,41 @@ For brevity, attacks with shared defense strategies are grouped. Each row of the
 ### 3.1 Test Suite Structure
 
 ```
-tests/red_team/
-├── 01_prompt_input/                # #1–8
-│   ├── direct_injection/           # 50+ templates × 3 phrasings
-│   ├── indirect_pdf/               # 30+ adversarial PDFs
-│   ├── indirect_image/             # 20+ adversarial images
-│   ├── cross_context/
-│   ├── jailbreak/                  # Garak set + custom
-│   ├── multimodal/                 # P6 effectiveness probes
-│   ├── semantic/                   # Unicode tricks
-│   └── zero_click/
-├── 02_goal_hijack/                 # #9–14
-├── 03_memory_context/              # #15–19
-├── 04_data_exfiltration/           # #20–28
-│   ├── cross_customer/             # RLS probes
-│   ├── url_exfil/                  # P10 probes
-│   ├── summarisation/
-│   └── rag_secret_extraction/
-├── 05_tool_execution/              # #29–37
-├── 06_identity_privilege/          # #38–43
-├── 07_orchestration/               # #44–49
-├── 08_supply_chain/                # #50–55 (mostly architectural; one live for #54)
-├── 09_cascading/                   # #61–64
-├── 10_human_trust/                 # #65–67
-├── 11_infrastructure/              # #68–72
-├── 12_privacy_inference/           # #76–79
-├── architectural_assertions/       # static tests for ARCHITECTURAL claims
-│   ├── test_orchestrator_is_not_llm.py
-│   ├── test_no_outbound_network_tools.py
-│   ├── test_agent_registry_static.py
-│   └── test_dependencies_pinned.py
+tests/
+├── unit/                           # pure unit tests — no external deps (pytest -m unit)
+│   ├── test_cross_customer_probes.py       # #20–28 RLS / cross-customer isolation probes
+│   ├── test_egress_probes.py               # #21, #27 URL exfil / output-filter probes
+│   ├── test_capability_token_bypass_probes.py  # #29–37 tool-execution / capability-token probes
+│   ├── test_attack_suite.py                # payload corpus regression harness
+│   ├── test_architectural_assertions.py    # static structural claims (orchestrator not LLM, etc.)
+│   ├── test_egress_filter.py               # P10 filter unit tests
+│   ├── test_formal_conformance.py          # 102 conformance tests: implementation vs. spec
+│   ├── test_spec_invariants.py             # 30 invariant tests: Python BFS over spec model
+│   ├── test_audit_chain.py                 # hash-chain integrity unit tests
+│   ├── test_signed_envelopes.py            # Ed25519 inter-agent signing unit tests
+│   ├── test_ifc.py                         # information-flow label propagation
+│   ├── test_orchestrator.py                # deterministic state-machine unit tests
+│   ├── test_intake_parser.py / test_parser_schemas.py
+│   ├── test_intake_actor.py / test_identity_verifier_actor.py
+│   ├── test_claims_processor_actor.py / test_settlement_actor.py
+│   ├── test_inquiry_actor.py / test_faq_actor.py
+│   ├── test_classify_damage.py / test_lookup_coverage.py / test_score_fraud.py
+│   ├── test_search_policy_docs.py / test_search_fraud_rules.py / test_inquiry_tools.py
+│   ├── test_pdf_sandbox.py / test_image_sandbox.py / test_vision_redaction.py / test_pdf_hidden.py
+│   ├── test_adversarial_sandbox.py / test_adversarial_strategy.py / test_adversarial_sse.py
+│   └── test_spend_cap.py / test_api_showcase_submit.py
+├── integration/                    # require running stack (make up && make migrate)
+│   ├── test_cross_customer_probes.py       # RLS probes against live Postgres
+│   ├── test_egress_probes.py               # egress filter integration
+│   ├── test_capability_token_bypass_probes.py  # capability-token pipeline live
+│   ├── test_capability_token_pipeline.py   # end-to-end token mint → tool use
+│   ├── test_rls.py                         # Postgres row-level security integration
+│   ├── test_agent_roles.py                 # agent RBAC integration
+│   ├── test_audit_chain.py                 # hash-chain DB integration
+│   ├── test_vertical_slice_e2e.py          # full claim lifecycle E2E
+│   ├── test_real_agents_e2e.py             # real LLM agents E2E
+│   ├── test_pdf_sandbox.py / test_image_sandbox.py / test_vision_redaction.py / test_pdf_hidden.py
+│   └── test_tool_registry.py / test_capability_tokens.py
 └── conftest.py
 ```
 

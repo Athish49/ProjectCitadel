@@ -443,11 +443,12 @@ The intended happy-path UX for both supported flows, for context. The page exist
 
 ### 6.10 Formal Specification (`/formal`)
 
-- Rendered TLA+ spec (syntax-highlighted)
-- State diagram of reachable states (auto-generated from TLC output)
-- Invariants listed with TLC verification status (last-checked timestamp)
-- Conformance-test status badge
-- Link to GitHub `formal/workflow.tla`
+- Rendered TLA+ spec (`formal/workflow.tla`, syntax-highlighted)
+- State diagram of reachable stages derived from the 11 valid edges in `transitions.py`
+- Invariants listed with Python BFS verification status (last-checked timestamp from `make formal-check`):
+  - TypeOK, ClosedIsAbsorbing, ForwardProgress, EventualClosure
+- Conformance-test status badge (`make formal-conformance`: 102 tests)
+- Link to GitHub `formal/workflow.tla` and `formal/check_spec.py`
 - One-paragraph plain-English explanation of what the spec actually proves and what it doesn't
 
 ### 6.11 Residual Risk Register (`/residual`)
@@ -618,7 +619,7 @@ Measured via Vercel Analytics; surfaced as a badge on the About page ("This site
 | Layer | Technology |
 |-------|------------|
 | Framework | Next.js 15 (App Router, RSC) |
-| Styling | Tailwind 3 + shadcn/ui + custom design tokens |
+| Styling | Tailwind v4 + shadcn/ui + custom design tokens |
 | State | TanStack Query v5 |
 | Live data | EventSource (SSE) + native WebSocket |
 | Diagrams | React Flow |

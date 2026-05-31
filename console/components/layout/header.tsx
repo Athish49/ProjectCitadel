@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 const NAV_LINKS = [
   { href: "/playground", label: "Playground" },
   { href: "/architecture", label: "Architecture" },
+  { href: "/formal", label: "Formal" },
   { href: "/matrix", label: "Matrix" },
   { href: "/patterns", label: "Patterns" },
   { href: "/adversary", label: "Adversary" },

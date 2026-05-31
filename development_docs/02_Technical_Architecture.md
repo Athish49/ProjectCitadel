@@ -281,11 +281,12 @@ audit_log:
 
 ### 2.9 Egress Output Filter (P10)
 
-Every customer-visible string passes through:
-1. PII regex (SSN, common card formats, phone patterns) → block + audit.
-2. URL allowlist (only docs.secureclaim.example, status.secureclaim.example) → strip + audit on violation.
-3. Label-aware redaction: if any source label of the response is SECRET, the response is replaced with a generic message and the original is logged for forensic review (but not shown to the customer).
-4. Output length cap to limit slow-extraction attacks.
+Every customer-visible string passes through these four steps in strict order. Step ordering is security-load-bearing and is enforced by the `TestEgressFilterStepOrder` assertion suite in `tests/unit/test_architectural_assertions.py`.
+
+1. **SECRET label kill-switch**: if any datum in the response carries a SECRET IFC label, the response is immediately replaced with a generic message and the original logged for forensic review. Short-circuits all remaining steps — SECRET content never reaches PII scanning or URL stripping.
+2. **URL strip**: the full, un-truncated text is scanned; any URL not on the published allowlist (docs.secureclaim.example, status.secureclaim.example) is replaced with `[external link removed]` and audited. Runs before PII check because URLs may themselves contain PII patterns; removing the URL removes the PII-in-URL case without triggering a false PII block.
+3. **PII regex** (SSN patterns, common card formats, phone numbers): URL-stripped text is scanned → block the response and audit on any hit. Runs after URL strip and before truncation to catch PII buried at the end of a long response.
+4. **Output length cap**: text truncated to MAX_OUTPUT_CHARS. Last step only — truncating earlier would discard PII in the tail without detection.
 
 ### 2.10 Adversarial Agent
 
@@ -434,14 +435,20 @@ In addition to new-claim filing, the system handles customer service interaction
 
 ### 3.4 Formal Specification
 
-The workflow state machine is specified in TLA+ (file `formal/workflow.tla`). The spec defines:
-- State variables: claim stage, identity state, decision result.
-- Actions: each transition with its guards.
-- Invariants:
-  - `SettlementImpliesClearance`: `stage = SETTLED ⇒ fraud_decision = CLEAR ∧ identity_verified`
-  - `NoSkipping`: every reachable state is preceded by exactly the legal predecessor set
-  - `NoUnbounded`: every session has bounded transitions
-- A test (`test_workflow_conformance.py`) enumerates reachable states in the implementation and verifies they match the spec.
+The workflow state machine is specified in TLA+ (`formal/workflow.tla`). The spec defines:
+
+- **State variables (8):** `stage`, `intake_complete`, `identity_verified`, `damage_assessed`, `coverage_calculated`, `complaint_captured`, `fraud_decision`, `settlement_amount`.
+- **Actions:** 11 workflow transitions (mirroring `_VALID_EDGES` in `transitions.py`) + 7 monotonic environment actions that advance boolean flags and set `fraud_decision`/`settlement_amount` from their sentinel values exactly once.
+- **Safety invariants:**
+  - `TypeOK`: all variables remain in their declared domains throughout
+  - `ClosedIsAbsorbing`: `[][stage = "CLOSED" ⇒ stage' = "CLOSED"]_vars` — CLOSED is a terminal sink
+  - `ForwardProgress`: `[][stage ≠ stage' ⇒ Rank(stage') > Rank(stage)]_vars` — transitions are strictly rank-increasing
+- **Liveness:** `EventualClosure`: `<>(stage = "CLOSED")` under weak fairness — every execution eventually closes
+
+**Verification approach.** Because TLC requires a JVM runtime, verification is performed by a Python BFS exhaustive checker (`formal/check_spec.py`) that enumerates the bounded state space (≤ 3,456 states: 9 stages × 4 fraud values × 3 amount values × 2⁵ boolean flags) and asserts all four invariants. Test coverage:
+
+- `tests/unit/test_spec_invariants.py` — 30 tests driving `check_spec.py` (TypeOK, ClosedIsAbsorbing, ForwardProgress, EventualClosure, state-space coverage)
+- `tests/unit/test_formal_conformance.py` — 102 tests driving the real `advance_stage()` implementation: exact edge-set match against `_SPEC_EDGES`, all 11 valid edges accepted, all 70 invalid pairs rejected, guard boundary conditions
 
 ---
 
@@ -536,8 +543,10 @@ The agent system exposes a dedicated `/showcase` API surface, read-only for ever
 secureclaim-ai/
 ├── agent_system/
 │   ├── orchestrator/                   # deterministic state machine
-│   │   ├── state_machine.py
+│   │   ├── state.py
 │   │   ├── transitions.py
+│   │   ├── intent_routing.py
+│   │   ├── prompts.py
 │   │   └── budgets.py
 │   ├── parser/                         # quarantined parser LLMs
 │   │   ├── intake_parser.py
@@ -545,7 +554,7 @@ secureclaim-ai/
 │   │   └── schemas/                    # strict JSON schemas
 │   ├── actors/                         # privileged actor LLMs
 │   │   ├── intake_actor.py             # intake + FAQ intent
-│   │   ├── identity_verifier.py
+│   │   ├── identity_verifier_actor.py
 │   │   ├── claims_processor_actor.py   # claim assessment
 │   │   ├── inquiry_actor.py            # inquiry intents (claim_status, policy_question, complaint) — ACTOR_AGENT_ID = "claims_processor"
 │   │   └── settlement_actor.py
@@ -572,9 +581,9 @@ secureclaim-ai/
 │   ├── strategy.py
 │   └── runner.py
 ├── formal/
-│   ├── workflow.tla
-│   ├── workflow.cfg
-│   └── conformance_test.py
+│   ├── workflow.tla                    # TLA+ formal spec
+│   ├── check_spec.py                   # Python BFS exhaustive checker
+│   └── __init__.py
 ├── console/                            # Next.js Resilience Console
 │   ├── app/
 │   ├── components/

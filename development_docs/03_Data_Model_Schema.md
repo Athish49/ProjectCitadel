@@ -325,7 +325,7 @@ Drastically reduced from prior version. We need enough data to make the demo coh
 | RAG public | ~10 docs | hand-written | FAQ, glossary |
 | RAG confidential | ~10 docs | hand-written | Policy T&C templates |
 | RAG secret | ~5 docs | hand-written | Fraud rules (for #17, #24 demonstrations) |
-| Attack payloads | 79 × ≥10 variants | hand-built + adversarial-generated | The actual test suite |
+| Attack payloads | 53 text templates (159 phrasings) + 23 adversarial images + 32 adversarial PDFs | hand-built + adversarial-generated | Covers attack types #1 and #5 in depth; corpus grows as sprints complete |
 
 ### 5.1 Data preparation pipeline (one-shot)
 
