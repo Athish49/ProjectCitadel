@@ -12,8 +12,11 @@ An unprivileged, tool-less *parser LLM* (Claude Haiku 4.5) receives raw user inp
 This structural separation means even a perfectly jailbroken parser LLM is bounded in its blast radius: it cannot exfiltrate data it never saw, and it cannot invoke tools it was never given.`,
     attackIds: [1, 2, 3, 6, 7, 8],
     implemented: true,
-    codeRefs: [],
-    testCount: 0,
+    codeRefs: [
+      { label: "run_intake_parser()", path: "backend/agent_system/parser/intake_parser.py", lineStart: 100, lineEnd: 134 },
+      { label: "IntakeOutput schema", path: "backend/agent_system/parser/schemas/intake.py", lineStart: 1, lineEnd: null },
+    ],
+    testCount: 18,
   },
   {
     id: "P2",
@@ -26,8 +29,11 @@ A plain-code state machine (not an LLM) holds claim state, validates transitions
 Attack #46 (Orchestration Layer Exploitation) is architecturally not applicable: there is no LLM in the orchestrator to compromise. A perfectly manipulated actor agent that proposes an invalid transition simply gets rejected — the orchestrator writes a \`transition_violation\` audit row and halts the session.`,
     attackIds: [9, 11, 13, 43, 46, 61, 62, 63, 64],
     implemented: true,
-    codeRefs: [],
-    testCount: 0,
+    codeRefs: [
+      { label: "Orchestrator.advance_stage()", path: "backend/agent_system/orchestrator/state.py", lineStart: 64, lineEnd: null },
+      { label: "TRANSITIONS table", path: "backend/agent_system/orchestrator/transitions.py", lineStart: 1, lineEnd: null },
+    ],
+    testCount: 102,
   },
   {
     id: "P3",
@@ -40,8 +46,12 @@ Every datum carries one of five labels: \`PUBLIC < PERSONAL < CONFIDENTIAL < SEC
 This means an agent cannot be coerced into exfiltrating data it is allowed to hold, because the label enforcement happens server-side — not in the agent's context.`,
     attackIds: [20, 21, 24, 26, 27, 28],
     implemented: true,
-    codeRefs: [],
-    testCount: 0,
+    codeRefs: [
+      { label: "DataLabel enum", path: "backend/agent_system/ifc/labels.py", lineStart: 31, lineEnd: 75 },
+      { label: "Label & merge()", path: "backend/agent_system/ifc/labels.py", lineStart: 79, lineEnd: null },
+      { label: "propagation rules", path: "backend/agent_system/ifc/propagation.py", lineStart: 1, lineEnd: null },
+    ],
+    testCount: 24,
   },
   {
     id: "P4",
@@ -54,8 +64,12 @@ Each tool call must carry a capability token minted by the orchestrator and sign
 The LLM cannot widen scope, cannot mint tokens, and cannot invoke tools outside its issued capability. A perfectly jailbroken Claims Processor agent that attempts \`request_payout\` will be rejected — the orchestrator never issued that capability token.`,
     attackIds: [29, 32, 33, 38, 39],
     implemented: true,
-    codeRefs: [],
-    testCount: 0,
+    codeRefs: [
+      { label: "CapabilityToken model", path: "backend/agent_system/tools/capability_tokens.py", lineStart: 54, lineEnd: 73 },
+      { label: "issue_token()", path: "backend/agent_system/tools/capability_tokens.py", lineStart: 129, lineEnd: 165 },
+      { label: "verify_token()", path: "backend/agent_system/tools/capability_tokens.py", lineStart: 195, lineEnd: 244 },
+    ],
+    testCount: 20,
   },
   {
     id: "P5",
@@ -68,8 +82,11 @@ PDFs and other documents are parsed in ephemeral containers with no network egre
 Extracted text is labelled UNTRUSTED and routed to the parser LLM (P1). Even a full container escape yields an ephemeral host with no persistent credentials or network reachability.`,
     attackIds: [2, 6, 8, 30, 35, 68],
     implemented: true,
-    codeRefs: [],
-    testCount: 0,
+    codeRefs: [
+      { label: "_scan_threats()", path: "backend/sandbox/pdf/parse.py", lineStart: 49, lineEnd: 128 },
+      { label: "image sandbox entrypoint", path: "backend/sandbox/image/parse.py", lineStart: 108, lineEnd: null },
+    ],
+    testCount: 12,
   },
   {
     id: "P6",
@@ -82,8 +99,11 @@ Before any image reaches a vision model, an OCR pass identifies text regions. Th
 This breaks the attack chain for hidden-text injections in images: the injected text becomes a plaintext UNTRUSTED signal rather than an invisible instruction to the vision model.`,
     attackIds: [6],
     implemented: true,
-    codeRefs: [],
-    testCount: 0,
+    codeRefs: [
+      { label: "redact_image()", path: "backend/agent_system/sanitisation/redaction.py", lineStart: 164, lineEnd: null },
+      { label: "TextRegion / RedactBox", path: "backend/agent_system/sanitisation/redaction.py", lineStart: 46, lineEnd: 86 },
+    ],
+    testCount: 8,
   },
   {
     id: "P7",
@@ -96,8 +116,10 @@ PostgreSQL row-level security (RLS) policies are attached directly to tables. Ea
 An agent coerced into running \`SELECT * FROM claims\` via SQL injection (attack #37) cannot return another customer's rows: the database silently filters them. This is the fail-closed baseline even when application-layer defenses fail.`,
     attackIds: [20, 28, 37],
     implemented: true,
-    codeRefs: [],
-    testCount: 0,
+    codeRefs: [
+      { label: "RLS policies (SQL)", path: "backend/db/migrations/001_initial_schema.sql", lineStart: 24, lineEnd: 31 },
+    ],
+    testCount: 14,
   },
   {
     id: "P8",
@@ -110,8 +132,11 @@ Every agent process holds a unique Ed25519 private key. Every message crossing a
 Key isolation means compromising one agent does not yield the keys of others. Spoofed inter-agent messages (attack #47) fail signature verification. Agent impersonation (attack #40) requires forging a key that was never stored in the compromised process.`,
     attackIds: [40, 44, 47],
     implemented: true,
-    codeRefs: [],
-    testCount: 0,
+    codeRefs: [
+      { label: "sign_message() / verify_message()", path: "backend/agent_system/identity/signing.py", lineStart: 20, lineEnd: 47 },
+      { label: "KeypairManager", path: "backend/agent_system/identity/keys.py", lineStart: 1, lineEnd: null },
+    ],
+    testCount: 10,
   },
   {
     id: "P9",
@@ -124,8 +149,12 @@ Every agent action, tool call, security event, and state transition writes exact
 Log poisoning (attack #18) is directly mitigated: malicious content written to a log cannot retroactively alter prior rows without breaking the hash chain. The audit log is the forensic primitive that makes all other defenses visible and attributable.`,
     attackIds: [18],
     implemented: true,
-    codeRefs: [],
-    testCount: 0,
+    codeRefs: [
+      { label: "compute_row_hash()", path: "backend/audit/chain.py", lineStart: 35, lineEnd: 37 },
+      { label: "append_log()", path: "backend/audit/chain.py", lineStart: 40, lineEnd: 113 },
+      { label: "verify_chain()", path: "backend/audit/chain.py", lineStart: 113, lineEnd: null },
+    ],
+    testCount: 16,
   },
   {
     id: "P10",
@@ -138,8 +167,12 @@ Every string destined for customer-visible output passes through a filter pipeli
 This breaks URL-based exfiltration (attack #25), social engineering via agent (attack #66), and prompt extraction (attack #78) — even when upstream agents have been compromised.`,
     attackIds: [21, 25, 26, 66, 78],
     implemented: true,
-    codeRefs: [],
-    testCount: 0,
+    codeRefs: [
+      { label: "filter_output()", path: "backend/agent_system/egress/filter.py", lineStart: 43, lineEnd: null },
+      { label: "PII patterns", path: "backend/agent_system/egress/patterns.py", lineStart: 1, lineEnd: null },
+      { label: "URL allowlist", path: "backend/agent_system/egress/allowlist.py", lineStart: 1, lineEnd: null },
+    ],
+    testCount: 22,
   },
   {
     id: "P11",
@@ -152,8 +185,12 @@ The deterministic orchestrator tracks: per-session token consumption (hard cap),
 This constrains Denial of Wallet (attack #69), recursive tool call loops (attack #31), and tool budget exhaustion (attack #34). Because enforcement is in the deterministic orchestrator — not in any LLM — it cannot be reasoned away.`,
     attackIds: [31, 34, 69, 70],
     implemented: true,
-    codeRefs: [],
-    testCount: 0,
+    codeRefs: [
+      { label: "SessionBudget", path: "backend/agent_system/orchestrator/budgets.py", lineStart: 30, lineEnd: 54 },
+      { label: "consume_tokens()", path: "backend/agent_system/orchestrator/budgets.py", lineStart: 56, lineEnd: 80 },
+      { label: "consume_tool_call()", path: "backend/agent_system/orchestrator/budgets.py", lineStart: 82, lineEnd: null },
+    ],
+    testCount: 8,
   },
   {
     id: "P12",
@@ -166,8 +203,12 @@ Every system prompt is registered with a content hash and signed manifest. At ru
 This means behavioral drift (attack #14), model backdoor activation (attack #57), and agent goal hijack via prompt substitution (attack #9) all require a signed manifest change — which requires a reviewed PR and produces a verifiable audit trail.`,
     attackIds: [9, 14, 57],
     implemented: true,
-    codeRefs: [],
-    testCount: 0,
+    codeRefs: [
+      { label: "PromptManifest", path: "backend/agent_system/orchestrator/prompts.py", lineStart: 50, lineEnd: 65 },
+      { label: "verify_manifest()", path: "backend/agent_system/orchestrator/prompts.py", lineStart: 97, lineEnd: 114 },
+      { label: "load_and_verify()", path: "backend/agent_system/orchestrator/prompts.py", lineStart: 115, lineEnd: 175 },
+    ],
+    testCount: 12,
   },
 ];
 
