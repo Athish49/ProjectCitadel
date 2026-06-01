@@ -10,6 +10,7 @@ const NAV_LINKS = [
   { href: "/patterns", label: "Patterns" },
   { href: "/adversary", label: "Adversary" },
   { href: "/audit", label: "Audit Feed" },
+  { href: "/residual", label: "Residual" },
   { href: "/demo", label: "Demo" },
   { href: "/docs", label: "Docs" },
 ] as const;
