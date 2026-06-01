@@ -37,7 +37,7 @@ export const PATTERN_EXTRAS: Record<PatternId, PatternExtra> = {
             "content": f"<untrusted>\\n{raw_text}\\n</untrusted>",
         }],
     )`,
-    codeFilename: "agent_system/parser/intake_parser.py",
+    codeFilename: "backend/agent_system/parser/intake_parser.py",
     codeLang: "python",
     references: [
       {
@@ -85,7 +85,7 @@ export const PATTERN_EXTRAS: Record<PatternId, PatternExtra> = {
             raise TransitionError(f"{session.stage} → {proposed} not permitted")
         # No LLM call here. Transition is a deterministic function of state.
         return session.with_stage(proposed)`,
-    codeFilename: "agent_system/orchestrator/state.py",
+    codeFilename: "backend/agent_system/orchestrator/state.py",
     codeLang: "python",
     references: [
       {
@@ -131,7 +131,7 @@ class Label:
 # Propagation rule: merge(CONFIDENTIAL, SECRET) → SECRET, tainted.
 def merge(a: Label, b: Label) -> Label:
     return Label(max(a.level, b.level), a.tainted or b.tainted)`,
-    codeFilename: "agent_system/ifc/labels.py",
+    codeFilename: "backend/agent_system/ifc/labels.py",
     codeLang: "python",
     references: [
       {
@@ -176,7 +176,7 @@ def merge(a: Label, b: Label) -> Label:
         return VerifyResult.denied(DenyReason.SCOPE)
     if token.tool != tool:
         return VerifyResult.denied(DenyReason.SCOPE)`,
-    codeFilename: "agent_system/tools/capability_tokens.py",
+    codeFilename: "backend/agent_system/tools/capability_tokens.py",
     codeLang: "python",
     references: [
       {
@@ -223,7 +223,7 @@ def _scan_threats(pdf_bytes: bytes) -> tuple[str | None, list[str]]:
                 if annot.type[0] in (pymupdf.PDF_ANNOT_WIDGET,):
                     threats.append("active_form_fields")
     return ("threat_detected" if threats else None), threats`,
-    codeFilename: "sandbox/pdf/parse.py",
+    codeFilename: "backend/sandbox/pdf/parse.py",
     codeLang: "python",
     references: [
       {
@@ -269,7 +269,7 @@ def _scan_threats(pdf_bytes: bytes) -> tuple[str | None, list[str]]:
     # 3. OCR text returned as UNTRUSTED for standard text pipeline.
     ocr_text = " ".join(r.text for r in regions)
     return VisionRedactionResult(redacted_image=img, ocr_text_untrusted=ocr_text)`,
-    codeFilename: "agent_system/sanitisation/redaction.py",
+    codeFilename: "backend/agent_system/sanitisation/redaction.py",
     codeLang: "python",
     references: [
       {
@@ -313,7 +313,7 @@ CREATE POLICY customers_self_only ON customers
     WITH CHECK (customer_id = current_setting('app.current_customer_id', true)::uuid);
 
 -- FORCE RLS means even the table owner is subject to the policy.`,
-    codeFilename: "db/migrations/001_initial_schema.sql",
+    codeFilename: "backend/db/migrations/001_initial_schema.sql",
     codeLang: "bash",
     references: [
       {
@@ -358,7 +358,7 @@ def verify_message(public_key_bytes: bytes, message: bytes, signature: bytes) ->
 
 # Each agent process holds its own private key (never shared).
 # Recipient agents verify the sender's signature before processing.`,
-    codeFilename: "agent_system/identity/signing.py",
+    codeFilename: "backend/agent_system/identity/signing.py",
     codeLang: "python",
     references: [
       {
@@ -400,7 +400,7 @@ def append_log(conn, *, agent_id, action, target, ...) -> int:
     log_id = next_sequence(cur)           # log_id is part of the signed payload
     row_hash = compute_row_hash(prev_hash, {log_id: log_id, ...})
     # Deleting or modifying any row breaks all subsequent hashes.`,
-    codeFilename: "audit/chain.py",
+    codeFilename: "backend/audit/chain.py",
     codeLang: "python",
     references: [
       {
@@ -449,7 +449,7 @@ def append_log(conn, *, agent_id, action, target, ...) -> int:
     for url in extract_urls(text):
         if not is_allowlisted(url):
             text = text.replace(url, "[URL REDACTED]")`,
-    codeFilename: "agent_system/egress/filter.py",
+    codeFilename: "backend/agent_system/egress/filter.py",
     codeLang: "python",
     references: [
       {
@@ -497,7 +497,7 @@ def consume_tokens(budget: SessionBudget, n: int, config: BudgetConfig) -> None:
             f"token budget exceeded: {budget.tokens_used} > {config.max_session_tokens}",
             kind="tokens"
         )`,
-    codeFilename: "agent_system/orchestrator/budgets.py",
+    codeFilename: "backend/agent_system/orchestrator/budgets.py",
     codeLang: "python",
     references: [
       {
@@ -544,7 +544,7 @@ def verify_manifest(manifest: PromptManifest, registry: KeyRegistry) -> None:
 def load_and_verify(manifest, registry) -> dict[str, str]:
     verify_manifest(manifest, registry)
     # Returns {agent_id: prompt_text} only after signature verification.`,
-    codeFilename: "agent_system/orchestrator/prompts.py",
+    codeFilename: "backend/agent_system/orchestrator/prompts.py",
     codeLang: "python",
     references: [
       {

@@ -1,7 +1,7 @@
 # SecureClaim AI — Security & Threat Model Document
 
 **Version:** 2.0
-**Date:** May 27, 2026
+**Date:** June 1, 2026
 **Status:** Final v2.0
 **Author:** Athish G R
 **Classification:** Internal
@@ -264,11 +264,23 @@ In addition to the static suite, an autonomous Claude Haiku 4.5 agent runs again
 
 ### 3.4 Honest Limitations
 
-The Console's footer carries a **Residual Risk Register**, including:
-- Detection heuristics (semantic injection classifier, steganography heuristic) have non-zero false-negative rates. Our structural defenses are the primary; classifiers are signals.
-- The dataset is small. Some attack categories that depend on volume (drift, slow exfiltration over many sessions) are demonstrated structurally, not empirically.
-- The "production-pattern" inter-agent signing in a single-process deployment is a pattern demonstration, not a network boundary. Promoting to a real deployment requires swapping transports.
-- LLM behaviour is nondeterministic. Live numbers are reported as run-medians with variance bands, not single-run snapshots.
+The published **Residual Risk Register** (`RESIDUAL_RISKS.md` at the repo root; rendered at `/residual` on the Console) documents 13 named residual risks with root cause, why each was not fully eliminated, and production mitigation in place. Key entries:
+
+| ID | Risk | Status |
+|----|------|--------|
+| RR-01 | OCR false-negatives leave PII in pre-redaction pipeline | accepted |
+| RR-02 | Schema-valid adversarial JSON from jailbroken parser | accepted |
+| RR-03 | Inter-agent signing within a single process, not a network boundary | accepted |
+| RR-04 | LLM statistics are point-in-time; model updates invalidate them | accepted |
+| RR-05 | No per-customer rate limiting on agent-invocation endpoint | planned |
+| RR-06 | RLS fail-open when `app.current_customer_id` is unset | accepted |
+| RR-07 | LSB steg detection fails on JPEG-recompressed images | accepted |
+| RR-08 | Training-data / model-weight attacks out of scope (hosted model) | won't-do |
+| RR-09 | Prompt extraction via paraphrasing evades egress content filter | accepted |
+| RR-10 | IFC labelling errors at entry boundaries are undetectable at runtime | accepted |
+| RR-11 | Adversarial agent incurs real Anthropic API costs | accepted |
+| RR-12 | Ed25519 key rotation is manual; no automated revocation | planned |
+| RR-13 | Container escape via kernel zero-day defeats process-level sandbox | accepted |
 
 This register is itself a portfolio signal: "this person knows what they're not claiming."
 

@@ -1,6 +1,6 @@
 # SecureClaim AI — Resilience Console (Showcase Platform Spec)
 
-**Version:** 1.0
+**Version:** 2.0
 **Date:** May 27, 2026
 **Status:** Final v2.0
 **Author:** Athish G R
@@ -144,10 +144,10 @@ The component library is built on **shadcn/ui** with custom primitives:
 
 ```
 SECURECLAIM AI — Resilience Console
-─────────────────────────────────────────────
-  Playground  ·  Architecture  ·  Matrix  ·  Patterns
-  Adversary   ·  Audit Feed     ·  Demo   ·  Docs
-                                       [⌘K]  [GitHub]
+───────────────────────────────────────────────────────────────────
+  Playground  ·  Architecture  ·  Formal  ·  Matrix  ·  Patterns
+  Adversary   ·  Audit Feed    ·  Residual  ·  Demo  ·  Docs
+                                                   [GitHub]
 ```
 
 Header always shows:
@@ -616,23 +616,19 @@ Measured via Vercel Analytics; surfaced as a badge on the About page ("This site
 
 ## 10. Technology Stack (Console)
 
-| Layer | Technology |
-|-------|------------|
-| Framework | Next.js 15 (App Router, RSC) |
-| Styling | Tailwind v4 + shadcn/ui + custom design tokens |
-| State | TanStack Query v5 |
-| Live data | EventSource (SSE) + native WebSocket |
-| Diagrams | React Flow |
-| Charts | Visx |
-| Code rendering | Shiki |
-| Command palette | cmdk |
-| Motion | Framer Motion (used sparingly) |
-| Forms | react-hook-form + zod |
-| Icons | Lucide |
-| Testing | Vitest + Playwright |
-| Hosting | Vercel (Edge) |
-| Analytics | Vercel Analytics |
-| Error monitoring | Sentry (free tier) |
+| Layer | Technology | Notes |
+|-------|------------|-------|
+| Framework | Next.js 15 (App Router, RSC) | |
+| Styling | Tailwind v4 + custom design tokens | shadcn/ui scaffolded; components hand-tuned |
+| State | React `useState` / `useEffect` | TanStack Query deferred to Phase 6 |
+| Live data | EventSource (SSE) custom hooks | WebSocket scaffolded; SSE used in practice |
+| Diagrams | React Flow (@xyflow/react v12) | |
+| Markdown | react-markdown + remark-gfm | `/docs` viewer |
+| Code rendering | Shiki | Python, TypeScript, SQL, TLA+ (via plaintext) |
+| Motion | Framer Motion | SVG pattern diagrams + layer reveals |
+| Icons | Lucide | |
+| Testing | Vitest | Playwright scaffolded; not yet written |
+| Build target | Vercel (Edge) | Not yet deployed |
 
 ---
 

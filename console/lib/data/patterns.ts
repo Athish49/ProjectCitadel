@@ -48,8 +48,8 @@ This means an agent cannot be coerced into exfiltrating data it is allowed to ho
     implemented: true,
     codeRefs: [
       { label: "DataLabel enum", path: "backend/agent_system/ifc/labels.py", lineStart: 31, lineEnd: 75 },
-      { label: "Label & merge()", path: "backend/agent_system/ifc/labels.py", lineStart: 79, lineEnd: null },
-      { label: "propagation rules", path: "backend/agent_system/ifc/propagation.py", lineStart: 1, lineEnd: null },
+      { label: "Label & Labeled classes", path: "backend/agent_system/ifc/labels.py", lineStart: 79, lineEnd: null },
+      { label: "join() / taint() propagation", path: "backend/agent_system/ifc/propagation.py", lineStart: 1, lineEnd: null },
     ],
     testCount: 24,
   },
