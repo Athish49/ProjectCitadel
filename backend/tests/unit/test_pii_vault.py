@@ -46,14 +46,20 @@ def _make_conn(
     cur.__exit__ = MagicMock(return_value=False)
     conn.cursor.return_value = cur
 
-    # fetchone() call sequence:
-    # 1 → fail_count (COUNT(*))
-    # 2 → customer_row (SELECT customers)
-    # 3 → vault_row   (SELECT pii_vault)
+    # fetchone() call sequence (after migration 006 — single SECURITY DEFINER call):
+    # 1 → (fail_count,)          — COUNT(*) lockout check
+    # 2 → combined_vault_row     — get_vault_data() returns (customer_id, dob, ssn_last4)
+    #                              None means policy_not_found; ssn_last4=None means vault_row_missing
+    if customer_row is None:
+        combined: tuple | None = None
+    elif vault_row is None:
+        combined = (customer_row[0], customer_row[1], None)
+    else:
+        combined = (customer_row[0], customer_row[1], vault_row[0])
+
     cur.fetchone.side_effect = [
         (fail_count,),
-        customer_row,
-        vault_row,
+        combined,
     ]
     return conn, cur
 

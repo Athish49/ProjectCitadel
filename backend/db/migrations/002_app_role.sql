@@ -18,7 +18,9 @@ BEGIN
 END
 $$;
 
-GRANT CONNECT ON DATABASE secureclaim TO secureclaim_app;
+DO $$ BEGIN
+    EXECUTE format('GRANT CONNECT ON DATABASE %I TO secureclaim_app', current_database());
+END $$;
 GRANT USAGE ON SCHEMA public TO secureclaim_app;
 
 -- ── Customer-scoped tables: read + write (RLS enforces per-customer isolation) ──

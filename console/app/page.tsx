@@ -1,3 +1,11 @@
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "SecureClaim AI — Resilience Console",
+  description:
+    "A multi-agent claims platform engineered against a 79-category attack taxonomy. Try attacks live, inspect the audit chain, and explore formal verification.",
+};
+
 export default function HomePage() {
   return (
     <div className="mx-auto max-w-screen-2xl px-4 py-16">

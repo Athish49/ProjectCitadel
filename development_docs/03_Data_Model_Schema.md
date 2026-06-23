@@ -1,8 +1,8 @@
 # SecureClaim AI — Data Model & Schema Document
 
-**Version:** 2.0
-**Date:** May 27, 2026
-**Status:** Final v2.0
+**Version:** 2.1
+**Date:** June 14, 2026
+**Status:** Updated v2.1
 **Author:** Athish G R
 **Classification:** Internal
 
@@ -265,6 +265,20 @@ This table is what feeds the Console's playground "Defense Fired" panel and the 
 **Access:** claims processor (RLS read/write — creates new complaint records as part of the customer-inquiry flow, reads only own-customer history). No other agent has direct access. The orchestrator reads only the `status` field to drive the ESCALATED transition.
 
 This table backs FR9.6 (PRD) and the `complaint` intent path in the Customer Inquiry Workflow (TAD §3.3).
+
+### 2.14 Ephemeral Runtime State — `trace_store` (non-persisted)
+
+`backend/app/showcase/trace_store.py` holds an **in-memory TTL cache** (120 s) that bridges the two-phase playground pipeline. It is not a database table and survives only within a single server process.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `trace_id` | `str` (UUID) | Key; issued by `POST /showcase/playground/submit` |
+| `payload` | `str` | Original user text before sanitisation |
+| `detections` | `list[str]` | Injection pattern IDs found by the sanitiser (e.g. `"delimiter_injection"`) |
+| `chars_stripped` | `int` | Zero-width / format characters removed by the sanitiser |
+| `sanitized` | `str` | `<untrusted>…</untrusted>`-wrapped text ready for the parser LLM |
+
+**Access semantics:** `get()` (not `pop()`), so EventSource reconnects within the TTL window find the same entry. Expired entries are pruned lazily on next access. The `security_events` table (§2.11) captures the persistent defense record for the same submission; this store is purely a coordination mechanism.
 
 ---
 

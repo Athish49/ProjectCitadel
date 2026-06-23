@@ -1,8 +1,8 @@
 # SecureClaim AI — Technical Architecture Document (TAD)
 
-**Version:** 2.0
-**Date:** May 27, 2026
-**Status:** Final v2.0
+**Version:** 2.1
+**Date:** June 14, 2026
+**Status:** Updated v2.1
 **Author:** Athish G R
 **Classification:** Internal
 
@@ -288,7 +288,43 @@ Every customer-visible string passes through these four steps in strict order. S
 3. **PII regex** (SSN patterns, common card formats, phone numbers): URL-stripped text is scanned → block the response and audit on any hit. Runs after URL strip and before truncation to catch PII buried at the end of a long response.
 4. **Output length cap**: text truncated to MAX_OUTPUT_CHARS. Last step only — truncating earlier would discard PII in the tail without detection.
 
-### 2.10 Adversarial Agent
+### 2.10 Playground Defense Pipeline
+
+The showcase playground runs the **full production defense gauntlet** on every submission — no scripted scenarios, no simulations. The pipeline has two components:
+
+#### `app/showcase/playground.py` — Submit endpoint
+
+`POST /showcase/playground/submit` accepts a raw payload, runs it through the ingress sanitisation pipeline (`agent_system/sanitisation/text.py`), and stores a `TraceEntry` in the ephemeral `trace_store`. It returns `{ trace_id, sse_url, attack }` immediately. The SSE stream is separate from the submission.
+
+```
+TraceEntry
+  payload:        str          # original user text
+  detections:     list[str]    # e.g. ["delimiter_injection", "role_switch_attempt"]
+  chars_stripped: int          # zero-width / format chars removed
+  sanitized:      str          # <untrusted>…</untrusted>-wrapped text
+```
+
+#### `app/showcase/playground_sse.py` — Real 7-layer SSE stream
+
+`GET /showcase/sse/playground/{trace_id}` reads the `TraceEntry` from `trace_store` and runs all seven defense layers, yielding one `layer_result` SSE event per layer and a final `verdict` event. Backend unavailability or a missing/expired trace yields a `stream_error` event.
+
+| Layer | ID | Pattern | What runs |
+|-------|----|---------|-----------|
+| 1 | `ingress` | P1 | Inspects `TraceEntry.detections` and `chars_stripped` from the already-executed sanitiser |
+| 2 | `pattern-detection` | P3 | Reports any non-delimiter injection patterns from `TraceEntry.detections` |
+| 3 | `semantic-classifier` | P3 | Live Claude Haiku call: classifies adversarial intent; blocks if confidence ≥ 0.7 |
+| 4 | `untrusted-tagging` | P3 | Reports the `<untrusted>` wrapping applied by the sanitiser |
+| 5 | `parser-llm` | P1 | Live `run_intake_parser()` call; blocks on `SchemaViolationError` or any exception |
+| 6 | `actor-llm` | P2 | Live `run_intake_actor()` call with ephemeral capability tokens; `partial` if incomplete |
+| 7 | `egress-filter` | P10 | Live `filter_output()` via psycopg3; falls back to `find_pii()` + `strip_urls()` if DB unavailable |
+
+The generator is a single Python `async` function that `asyncio.to_thread()`-wraps every synchronous Anthropic and psycopg3 call to avoid blocking the event loop. The orchestrator keypair is ephemeral (generated at module import, pure-Python crypto, no I/O).
+
+#### `app/showcase/trace_store.py` — Ephemeral coordination layer
+
+In-memory TTL store (120 s) mapping `trace_id → TraceEntry`. `get()` semantics (not `pop()`) so EventSource reconnects within the TTL find the same entry. Not persisted: a server restart clears the store. See §3 of Doc 03 for the persisted data model.
+
+### 2.11 Adversarial Agent
 
 A separate process running Claude Haiku 4.5 with a system prompt instructing it to attempt attacks from the taxonomy against a sandboxed instance of SecureClaim AI. Its results stream live to the Console.
 
@@ -459,10 +495,9 @@ The workflow state machine is specified in TLA+ (`formal/workflow.tla`). The spe
 The Console is a Next.js application hosted independently of the agent system. It consumes:
 
 - **REST API** for static reads (matrix data, defense pattern docs, recent attacks).
-- **Server-Sent Events** for live audit stream and adversarial agent feed.
-- **WebSocket** for the playground's bidirectional attack/defense session.
+- **Server-Sent Events (SSE)** for live streams: audit feed, adversarial agent feed, and playground layer-by-layer defense trace.
 
-The agent system exposes a dedicated `/showcase` API surface, read-only for everything except the playground submission endpoint. The Console never holds privileged credentials.
+The agent system exposes a dedicated `/showcase` API surface, read-only for everything except the playground submission endpoint. The Console never holds privileged credentials. WebSocket is **not** used; all live data is delivered via SSE.
 
 ---
 
@@ -502,7 +537,7 @@ The agent system exposes a dedicated `/showcase` API surface, read-only for ever
 | Framework | Next.js 15 (App Router) | SSR + RSC; serious framework |
 | Styling | Tailwind + shadcn/ui | Professional baseline, full customisation |
 | State | TanStack Query for server state | Cache-aware, observable |
-| Live data | Server-Sent Events for streams; native WebSocket for playground | Standard primitives |
+| Live data | Server-Sent Events for all live streams (audit, adversarial, playground defense trace) | Single transport; bidirectional input handled via standard HTTP POST |
 | Diagrams | React Flow for architecture explorer | Interactive, accessible |
 | Charts | Visx (D3 wrapper) | Production-grade, accessible |
 | Code rendering | Shiki | Terminal-style accurate highlighting |
@@ -633,8 +668,8 @@ secureclaim-ai/
 | GET | `/showcase/sessions/{trace_id}` | Replay payload for a session |
 | GET | `/showcase/sse/audit` | Server-sent events: live audit stream |
 | GET | `/showcase/sse/adversarial` | Server-sent events: adversarial agent feed |
-| POST | `/showcase/playground/submit` | Submit an attack attempt; returns trace_id |
-| WS | `/showcase/playground/stream/{trace_id}` | Live defense-trace stream |
+| POST | `/showcase/playground/submit` | Submit attack payload; sanitises, stores ephemeral `TraceEntry`, returns `{ trace_id, sse_url, attack }` |
+| GET | `/showcase/sse/playground/{trace_id}` | Server-sent events: real-time 7-layer defense-trace stream; emits `layer_result` events per layer and a final `verdict` event; `stream_error` on failure |
 
 ### 7.3 Internal (per-agent JWT + capability token required)
 

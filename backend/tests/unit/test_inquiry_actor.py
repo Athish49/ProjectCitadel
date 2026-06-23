@@ -10,6 +10,9 @@ Tests cover:
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
+from datetime import date
+from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -22,6 +25,7 @@ from agent_system.actors.inquiry_actor import (
 from agent_system.identity.keys import KeypairManager
 from agent_system.parser.schemas.intake import ClaimIntent
 from agent_system.tools.capability_tokens import issue_token
+from agent_system.tools.tool_context import _conn_var
 
 pytestmark = pytest.mark.unit
 
@@ -98,32 +102,80 @@ def policy_tokens(orchestrator_km):
 
 
 # ---------------------------------------------------------------------------
+# Tool ContextVar helpers for conn=None actor tests
+# ---------------------------------------------------------------------------
+
+
+def _make_tool_mock(fetchone_row):
+    conn = MagicMock()
+    cur = MagicMock()
+    cur.__enter__ = MagicMock(return_value=cur)
+    cur.__exit__ = MagicMock(return_value=False)
+    cur.fetchone.return_value = fetchone_row
+    conn.cursor.return_value = cur
+    return conn
+
+
+# Rows that satisfy each tool's unpacking expectations.
+_CLAIM_STATUS_ROW = (
+    "CLM-000001",
+    "PROCESSING",
+    "collision",
+    date(2024, 3, 15),
+    Decimal("25000.00"),
+)
+_COVERAGE_ROW = ("COMPREHENSIVE", "STANDARD", 1000, 10000, "ACTIVE")
+
+
+@contextmanager
+def _claim_status_tool_ctx():
+    """Set ContextVar so lookup_claim_status can access DB in conn=None actor tests."""
+    token = _conn_var.set(_make_tool_mock(_CLAIM_STATUS_ROW))
+    try:
+        yield
+    finally:
+        _conn_var.reset(token)
+
+
+@contextmanager
+def _coverage_tool_ctx():
+    """Set ContextVar so lookup_coverage can access DB in conn=None actor tests."""
+    token = _conn_var.set(_make_tool_mock(_COVERAGE_ROW))
+    try:
+        yield
+    finally:
+        _conn_var.reset(token)
+
+
+# ---------------------------------------------------------------------------
 # Helper: run actor without DB (conn=None, filter skipped)
 # ---------------------------------------------------------------------------
 
 
 def _run_status(orchestrator_km, tokens, client):
-    return run_inquiry_actor(
-        claim_id=_CLAIM_ID,
-        intent=ClaimIntent.claim_status,
-        pre_issued_tokens=tokens,
-        orchestrator_public_key=orchestrator_km.public_key_bytes,
-        client=client,
-        session_id=_SESSION,
-        conn=None,
-    )
+    with _claim_status_tool_ctx():
+        return run_inquiry_actor(
+            claim_id=_CLAIM_ID,
+            intent=ClaimIntent.claim_status,
+            pre_issued_tokens=tokens,
+            orchestrator_public_key=orchestrator_km.public_key_bytes,
+            client=client,
+            session_id=_SESSION,
+            conn=None,
+        )
 
 
 def _run_policy(orchestrator_km, tokens, client):
-    return run_inquiry_actor(
-        claim_id=_CLAIM_ID,
-        intent=ClaimIntent.policy_question,
-        pre_issued_tokens=tokens,
-        orchestrator_public_key=orchestrator_km.public_key_bytes,
-        client=client,
-        session_id=_SESSION,
-        conn=None,
-    )
+    with _coverage_tool_ctx():
+        return run_inquiry_actor(
+            claim_id=_CLAIM_ID,
+            intent=ClaimIntent.policy_question,
+            pre_issued_tokens=tokens,
+            orchestrator_public_key=orchestrator_km.public_key_bytes,
+            client=client,
+            session_id=_SESSION,
+            conn=None,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -391,7 +443,7 @@ class TestInquiryActorEgressFilter:
             _response([_text_block("Processing.")], "end_turn"),
         )
 
-        with patch("agent_system.actors.inquiry_actor.filter_output") as mock_filter:
+        with _claim_status_tool_ctx(), patch("agent_system.actors.inquiry_actor.filter_output") as mock_filter:
             run_inquiry_actor(
                 claim_id=_CLAIM_ID,
                 intent=ClaimIntent.claim_status,

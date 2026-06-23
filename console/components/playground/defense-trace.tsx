@@ -102,9 +102,8 @@ function EmptyState() {
       <div className="flex max-w-md items-start gap-2 rounded border border-border bg-bg-1 px-3 py-2.5">
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-fg-3" />
         <p className="font-mono text-[10px] leading-relaxed text-fg-3">
-          Each submission streams layer-by-layer defense events via SSE. Scenarios are
-          scenario-simulated with realistic timing; the structural defense logic (P1–P12) is
-          faithfully reproduced.
+          Each submission streams real layer-by-layer defense events via SSE directly from the
+          backend. Every layer runs live — no scripted scenarios.
         </p>
       </div>
     </FadeIn>
@@ -140,6 +139,11 @@ function TraceView({ trace }: TraceViewProps) {
           <span className="rounded-sm bg-bg-2 px-1.5 py-0.5 font-mono text-[10px] text-fg-3">
             #{trace.attackId} · {trace.attackName}
           </span>
+          {{
+            intake:     <span key="tf" className="rounded-sm border border-trust/30 bg-trust/10 px-1.5 py-0.5 font-mono text-[10px] text-trust/80">Intake Parser</span>,
+            claims:     <span key="tf" className="rounded-sm border border-warn/30 bg-warn/10 px-1.5 py-0.5 font-mono text-[10px] text-warn/80">Claims Processor</span>,
+            settlement: <span key="tf" className="rounded-sm border border-audit/30 bg-audit/10 px-1.5 py-0.5 font-mono text-[10px] text-audit/80">Settlement Actor</span>,
+          }[trace.targetFlow]}
           {trace.isExample && (
             <span className="rounded-sm border border-warn/40 bg-warn/10 px-1.5 py-0.5 font-mono text-[10px] text-warn">
               example trace

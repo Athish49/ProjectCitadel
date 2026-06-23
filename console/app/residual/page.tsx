@@ -1,6 +1,11 @@
-"use client";
-
+import type { Metadata } from "next";
 import Link from "next/link";
+
+export const metadata: Metadata = {
+  title: "Residual Risk Register — SecureClaim AI",
+  description:
+    "Documented risks that remain after all implemented controls — what is not covered, why, and what would mitigate it in production.",
+};
 import { RESIDUAL_RISKS, type RiskStatus } from "@/lib/data/residual-risks";
 import { cn } from "@/lib/utils";
 

@@ -27,6 +27,14 @@ from agent_system.tools.capability_tokens import issue_token
 
 pytestmark = pytest.mark.unit
 
+
+# Force stub path for all tests: the FAQ actor calls search_public_faq which
+# must not hit live Qdrant (no ProjectCitadel-public_faq collection yet).
+@pytest.fixture(autouse=True)
+def _force_faq_stub(monkeypatch):
+    monkeypatch.delenv("QDRANT_URL", raising=False)
+
+
 # ---------------------------------------------------------------------------
 # Mock helpers (same pattern as other actor tests)
 # ---------------------------------------------------------------------------

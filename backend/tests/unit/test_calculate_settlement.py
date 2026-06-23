@@ -13,7 +13,6 @@ from agent_system.tools.capability_tokens import issue_token
 from agent_system.tools.implementations.claims_tools import (
     AUTO_APPROVE_LIMITS,
     DEDUCTIBLES,
-    lookup_coverage,
 )
 from agent_system.tools.implementations.settlement_tools import (
     _CLAIM_AMOUNTS,
@@ -179,39 +178,6 @@ class TestCalculateSettlementPathCoverage:
             )
         ]
         assert len(escalated) > 0
-
-
-# ---------------------------------------------------------------------------
-# Cross-tool consistency with lookup_coverage
-#
-# Both tools derive deductible and auto_approve_limit from the same hash
-# bit ranges (h >> 16 and h >> 24 respectively).  They must agree.
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestCalculateSettlementCrossToolConsistency:
-    def test_deductible_matches_lookup_coverage(self):
-        for i in range(1, 51):
-            cid = f"CLM-{i:03d}"
-            settlement = calculate_settlement(cid).value
-            coverage = lookup_coverage(cid).value
-            assert settlement["deductible_applied"] == float(coverage["deductible"]), (
-                f"Deductible mismatch for {cid}: "
-                f"settlement={settlement['deductible_applied']}, "
-                f"coverage={coverage['deductible']}"
-            )
-
-    def test_auto_approve_limit_matches_lookup_coverage(self):
-        for i in range(1, 51):
-            cid = f"CLM-{i:03d}"
-            settlement = calculate_settlement(cid).value
-            coverage = lookup_coverage(cid).value
-            assert settlement["auto_approve_limit"] == float(coverage["auto_approve_limit"]), (
-                f"auto_approve_limit mismatch for {cid}: "
-                f"settlement={settlement['auto_approve_limit']}, "
-                f"coverage={coverage['auto_approve_limit']}"
-            )
 
 
 # ---------------------------------------------------------------------------

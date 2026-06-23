@@ -1,6 +1,11 @@
-"use client";
-
+import type { Metadata } from "next";
 import { PATTERNS } from "@/lib/data/patterns";
+
+export const metadata: Metadata = {
+  title: "Defense Pattern Library — SecureClaim AI",
+  description:
+    "P1–P12: twelve architectural defense patterns with citations, implementation code, and animated diagrams. Named patterns, not regexes.",
+};
 import { PatternCard } from "@/components/patterns/pattern-card";
 
 export default function PatternsPage() {

@@ -2,6 +2,8 @@ import type { AdversarialAttempt, BreachCountEvent } from "@/lib/types/adversari
 
 export const dynamic = "force-dynamic";
 
+const BACKEND_URL = process.env.BACKEND_URL ?? "http://localhost:8000";
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function sleep(ms: number) {
@@ -95,9 +97,14 @@ function generateAttempt(): AdversarialAttempt {
   };
 }
 
-// ── Route handler ─────────────────────────────────────────────────────────────
+const SSE_HEADERS = {
+  "Content-Type":      "text/event-stream",
+  "Cache-Control":     "no-cache, no-transform",
+  "X-Accel-Buffering": "no",
+  "Connection":        "keep-alive",
+} as const;
 
-export async function GET() {
+function simulatedStream(): Response {
   const encoder = new TextEncoder();
   let cancelled = false;
 
@@ -120,7 +127,6 @@ export async function GET() {
             encoder.encode(`event: attempt\ndata: ${JSON.stringify(attempt)}\n\n`)
           );
 
-          // Emit updated breach_count after each breach.
           if (attempt.is_breach) {
             const stats: BreachCountEvent = {
               breach_count: _breachCount,
@@ -143,12 +149,23 @@ export async function GET() {
     },
   });
 
-  return new Response(stream, {
-    headers: {
-      "Content-Type":      "text/event-stream",
-      "Cache-Control":     "no-cache, no-transform",
-      "X-Accel-Buffering": "no",
-      "Connection":        "keep-alive",
-    },
-  });
+  return new Response(stream, { headers: SSE_HEADERS });
+}
+
+// ── Route handler ─────────────────────────────────────────────────────────────
+
+export async function GET() {
+  // Proxy to the real backend SSE; fall back to simulated stream if unreachable.
+  try {
+    const upstream = await fetch(`${BACKEND_URL}/showcase/sse/adversarial`, {
+      headers: { Accept: "text/event-stream", "Cache-Control": "no-cache" },
+    });
+    if (upstream.ok && upstream.body) {
+      return new Response(upstream.body, { headers: SSE_HEADERS });
+    }
+  } catch {
+    // backend not available
+  }
+
+  return simulatedStream();
 }

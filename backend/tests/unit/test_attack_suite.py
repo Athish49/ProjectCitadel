@@ -516,28 +516,33 @@ class TestAttack37SqlInjectionViaAgent:
         parsed = json.loads(json_part)
         assert parsed["damage_description"] == sql  # safely quoted as a string value
 
-    def test_search_faq_handler_returns_static_data_regardless_of_sql_query(self) -> None:
-        """Handlers return deterministic data — SQL in query parameters cannot reach the DB."""
-        from agent_system.actors.intake_actor import _handle_search_public_faq
+    def test_search_faq_handler_returns_deterministic_data_regardless_of_sql_query(
+        self, monkeypatch
+    ) -> None:
+        """search_public_faq uses hashlib stub — SQL in query cannot reach the DB."""
+        monkeypatch.delenv("QDRANT_URL", raising=False)
+        from agent_system.tools.implementations.rag_retrievers import search_public_faq
 
         for sql in self._SQL_PAYLOADS:
-            result = _handle_search_public_faq(query=sql)
-            assert "results" in result
-            assert isinstance(result["results"], list)
-            assert len(result["results"]) > 0
+            result = search_public_faq(query=sql)
+            # Returns Labeled[dict] with chunks — SQL is handled as an inert search string
+            assert "chunks" in result.value
+            assert isinstance(result.value["chunks"], list)
+            assert len(result.value["chunks"]) > 0
 
     def test_tool_handlers_are_pure_functions_with_no_db_connection_parameter(self) -> None:
         """Architectural assertion: intake actor handlers take no DB connection — no SQL path."""
         from agent_system.actors.intake_actor import (
             _handle_mark_intake_complete,
             _handle_request_more_info,
-            _handle_search_public_faq,
         )
+        from agent_system.tools.implementations.rag_retrievers import search_public_faq
+
         db_params = {"conn", "connection", "cursor", "db", "session"}
         for handler in (
             _handle_mark_intake_complete,
             _handle_request_more_info,
-            _handle_search_public_faq,
+            search_public_faq,
         ):
             param_names = set(inspect.signature(handler).parameters.keys())
             overlap = param_names & db_params

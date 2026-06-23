@@ -96,9 +96,9 @@ class TestSearchPolicyDocsPure:
 
     def test_score_in_valid_range(self):
         result = search_policy_docs("comprehensive coverage definition")
-        valid_scores = {0.93, 0.88, 0.84, 0.79, 0.74}
         for chunk in result.value["chunks"]:
-            assert chunk["score"] in valid_scores
+            assert isinstance(chunk["score"], float)
+            assert 0.0 < chunk["score"] <= 1.0
 
     def test_doc_ids_from_corpus(self):
         corpus_ids = {doc["doc_id"] for doc in _POLICY_CORPUS}

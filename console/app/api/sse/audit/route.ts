@@ -199,14 +199,22 @@ function generateEvent(traceId: string): AuditRow {
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+const BACKEND_URL = process.env.BACKEND_URL ?? "http://localhost:8000";
+
+const SSE_HEADERS = {
+  "Content-Type":      "text/event-stream",
+  "Cache-Control":     "no-cache, no-transform",
+  "X-Accel-Buffering": "no",
+  "Connection":        "keep-alive",
+};
+
+function simulatedStream(): Response {
   const encoder = new TextEncoder();
   let cancelled = false;
 
   const stream = new ReadableStream({
     async start(controller) {
       try {
-        // Each "session" runs 4-9 events on the same traceId, then rotates.
         while (!cancelled) {
           const traceId = pick(TRACE_POOL);
           const sessionLen = rand(4, 9);
@@ -228,12 +236,19 @@ export async function GET() {
     },
   });
 
-  return new Response(stream, {
-    headers: {
-      "Content-Type":      "text/event-stream",
-      "Cache-Control":     "no-cache, no-transform",
-      "X-Accel-Buffering": "no",
-      "Connection":        "keep-alive",
-    },
-  });
+  return new Response(stream, { headers: SSE_HEADERS });
+}
+
+export async function GET() {
+  try {
+    const upstream = await fetch(`${BACKEND_URL}/showcase/sse/audit`, {
+      headers: { Accept: "text/event-stream", "Cache-Control": "no-cache" },
+    });
+    if (upstream.ok && upstream.body) {
+      return new Response(upstream.body, { headers: SSE_HEADERS });
+    }
+  } catch {
+    // backend not available — fall through to simulated stream
+  }
+  return simulatedStream();
 }

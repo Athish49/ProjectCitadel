@@ -43,6 +43,7 @@ export interface PlaygroundTrace {
   attackId: number;
   attackName: string;
   tab: AttackComposerTab;
+  targetFlow: TargetFlow;
   submittedAt: string;
   layers: TraceLayer[];
   verdict: TraceVerdict | null;

@@ -1,7 +1,13 @@
-"""Unit tests for lookup_coverage tool (Sprint 4.1.2)."""
+"""Unit tests for lookup_coverage tool (Sprint 4.1.2).
+
+The tool reads policy data via claims JOIN policies using a ContextVar-injected
+DB connection.  Pure tests set the ContextVar directly; registry tests verify
+CONFIDENTIAL-label propagation.
+"""
 from __future__ import annotations
 
 import uuid
+from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -17,6 +23,16 @@ from agent_system.tools.implementations.claims_tools import (
     lookup_coverage,
 )
 from agent_system.tools.registry import ToolRegistry
+from agent_system.tools.tool_context import _conn_var
+
+
+# ---------------------------------------------------------------------------
+# Seeded policy row — mirrors seed.py ranges
+# ---------------------------------------------------------------------------
+
+# (policy_type, coverage_type, policy_deductible, auto_approve_limit, policy_status)
+_ROW_ACTIVE = ("COMPREHENSIVE", "STANDARD", 1000, 10000, "ACTIVE")
+_ROW_LAPSED = ("COLLISION",     "BASIC",    500,  5000,  "LAPSED")
 
 
 # ---------------------------------------------------------------------------
@@ -24,14 +40,35 @@ from agent_system.tools.registry import ToolRegistry
 # ---------------------------------------------------------------------------
 
 
-def _make_conn(used_at=None, row_exists=True):
+def _make_mock_conn(row):
     conn = MagicMock()
     cur = MagicMock()
     cur.__enter__ = MagicMock(return_value=cur)
     cur.__exit__ = MagicMock(return_value=False)
-    cur.fetchone.return_value = (used_at,) if row_exists else None
+    cur.fetchone.return_value = row
     conn.cursor.return_value = cur
     return conn
+
+
+def _make_registry_conn(row):
+    """Mock conn: first fetchone=replay-check, second=handler row."""
+    conn = MagicMock()
+    cur = MagicMock()
+    cur.__enter__ = MagicMock(return_value=cur)
+    cur.__exit__ = MagicMock(return_value=False)
+    cur.fetchone.side_effect = [(None,), row]
+    conn.cursor.return_value = cur
+    return conn
+
+
+@contextmanager
+def _conn_ctx(row):
+    conn = _make_mock_conn(row)
+    token = _conn_var.set(conn)
+    try:
+        yield conn
+    finally:
+        _conn_var.reset(token)
 
 
 # ---------------------------------------------------------------------------
@@ -42,82 +79,103 @@ def _make_conn(used_at=None, row_exists=True):
 @pytest.mark.unit
 class TestLookupCoveragePure:
     def test_returns_labeled_dict(self):
-        result = lookup_coverage("CLM-001")
+        with _conn_ctx(_ROW_ACTIVE):
+            result = lookup_coverage("CLM-001")
         assert isinstance(result, Labeled)
         assert isinstance(result.value, dict)
 
     def test_deterministic(self):
-        a = lookup_coverage("CLM-determinism")
-        b = lookup_coverage("CLM-determinism")
+        with _conn_ctx(_ROW_ACTIVE):
+            a = lookup_coverage("CLM-det")
+        with _conn_ctx(_ROW_ACTIVE):
+            b = lookup_coverage("CLM-det")
         assert a.value == b.value
 
     def test_claim_id_echoed(self):
-        result = lookup_coverage("CLM-echo-test")
+        with _conn_ctx(_ROW_ACTIVE):
+            result = lookup_coverage("CLM-echo-test")
         assert result.value["claim_id"] == "CLM-echo-test"
 
     def test_value_has_required_keys(self):
-        result = lookup_coverage("CLM-keys")
+        with _conn_ctx(_ROW_ACTIVE):
+            result = lookup_coverage("CLM-keys")
         assert {
             "claim_id", "policy_type", "coverage_type",
             "deductible", "auto_approve_limit", "policy_status",
             "coverage_applicable",
         } <= result.value.keys()
 
-    def test_policy_type_valid(self):
-        result = lookup_coverage("CLM-ptype")
-        assert result.value["policy_type"] in _POLICY_TYPES
+    def test_policy_type_from_db(self):
+        with _conn_ctx(_ROW_ACTIVE):
+            result = lookup_coverage("CLM-ptype")
+        assert result.value["policy_type"] == "COMPREHENSIVE"
 
-    def test_coverage_type_valid(self):
-        result = lookup_coverage("CLM-ctype")
-        assert result.value["coverage_type"] in _COVERAGE_TYPES
+    def test_coverage_type_from_db(self):
+        with _conn_ctx(_ROW_ACTIVE):
+            result = lookup_coverage("CLM-ctype")
+        assert result.value["coverage_type"] == "STANDARD"
 
-    def test_deductible_valid(self):
-        result = lookup_coverage("CLM-deductible")
-        assert result.value["deductible"] in DEDUCTIBLES
+    def test_deductible_from_db(self):
+        with _conn_ctx(_ROW_ACTIVE):
+            result = lookup_coverage("CLM-deductible")
+        assert result.value["deductible"] == 1000
 
-    def test_auto_approve_limit_valid(self):
-        result = lookup_coverage("CLM-approve")
-        assert result.value["auto_approve_limit"] in AUTO_APPROVE_LIMITS
+    def test_deductible_is_int(self):
+        with _conn_ctx(_ROW_ACTIVE):
+            result = lookup_coverage("CLM-deductible-int")
+        assert isinstance(result.value["deductible"], int)
+
+    def test_auto_approve_limit_from_db(self):
+        with _conn_ctx(_ROW_ACTIVE):
+            result = lookup_coverage("CLM-approve")
+        assert result.value["auto_approve_limit"] == 10000
+
+    def test_auto_approve_limit_is_int(self):
+        with _conn_ctx(_ROW_ACTIVE):
+            result = lookup_coverage("CLM-approve-int")
+        assert isinstance(result.value["auto_approve_limit"], int)
 
     def test_policy_status_active(self):
-        result = lookup_coverage("CLM-status")
+        with _conn_ctx(_ROW_ACTIVE):
+            result = lookup_coverage("CLM-status-active")
         assert result.value["policy_status"] == "ACTIVE"
 
-    def test_coverage_applicable_is_bool(self):
-        result = lookup_coverage("CLM-applicable")
-        assert isinstance(result.value["coverage_applicable"], bool)
+    def test_coverage_applicable_true_when_active(self):
+        with _conn_ctx(_ROW_ACTIVE):
+            result = lookup_coverage("CLM-applicable-true")
+        assert result.value["coverage_applicable"] is True
 
-    def test_all_policy_types_reachable(self):
-        seen: set[str] = set()
-        for i in range(200):
-            seen.add(lookup_coverage(f"probe-ptype-{i:04d}").value["policy_type"])
-            if len(seen) == len(_POLICY_TYPES):
-                break
-        assert seen == set(_POLICY_TYPES)
-
-    def test_all_coverage_types_reachable(self):
-        seen: set[str] = set()
-        for i in range(200):
-            seen.add(lookup_coverage(f"probe-ctype-{i:04d}").value["coverage_type"])
-            if len(seen) == len(_COVERAGE_TYPES):
-                break
-        assert seen == set(_COVERAGE_TYPES)
-
-    def test_both_coverage_applicable_values_reachable(self):
-        results = {lookup_coverage(f"probe-app-{i:04d}").value["coverage_applicable"] for i in range(50)}
-        assert results == {True, False}
+    def test_coverage_applicable_false_when_lapsed(self):
+        with _conn_ctx(_ROW_LAPSED):
+            result = lookup_coverage("CLM-applicable-false")
+        assert result.value["coverage_applicable"] is False
 
     def test_ifc_label_is_confidential(self):
-        result = lookup_coverage("CLM-label")
+        with _conn_ctx(_ROW_ACTIVE):
+            result = lookup_coverage("CLM-label")
         assert result.label.level == DataLabel.CONFIDENTIAL
 
     def test_ifc_label_not_untrusted(self):
-        result = lookup_coverage("CLM-untrusted")
+        with _conn_ctx(_ROW_ACTIVE):
+            result = lookup_coverage("CLM-untrusted")
         assert result.label.untrusted is False
 
-    def test_different_claim_ids_produce_variety(self):
-        policy_types = {lookup_coverage(f"CLM-var-{i}").value["policy_type"] for i in range(20)}
-        assert len(policy_types) > 1
+    def test_raises_when_no_row(self):
+        conn = _make_mock_conn(None)
+        token = _conn_var.set(conn)
+        try:
+            with pytest.raises(ValueError, match="No policy found"):
+                lookup_coverage("CLM-missing")
+        finally:
+            _conn_var.reset(token)
+
+    def test_no_conn_context_raises_runtime_error(self):
+        cv_token = _conn_var.set(None)
+        try:
+            with pytest.raises(RuntimeError, match="No database connection"):
+                lookup_coverage("CLM-no-ctx")
+        finally:
+            _conn_var.reset(cv_token)
 
 
 # ---------------------------------------------------------------------------
@@ -147,10 +205,10 @@ def coverage_token(orchestrator_km):
     )
 
 
-def _invoke_coverage(registry, token, orchestrator_km, *, params=None, used_at=None, row_exists=True):
+def _invoke_coverage(registry, token, orchestrator_km, *, params=None, db_row=_ROW_ACTIVE):
     if params is None:
         params = {"claim_id": "CLM-token-001"}
-    conn = _make_conn(used_at=used_at, row_exists=row_exists)
+    conn = _make_registry_conn(db_row)
     with (
         patch("agent_system.tools.registry.append_log", return_value=42) as mock_log,
         patch("agent_system.tools.registry.record_use") as mock_record,
@@ -193,8 +251,20 @@ class TestLookupCoverageRegistry:
         result, _, _ = _invoke_coverage(coverage_registry, coverage_token, orchestrator_km)
         assert result.value.label.level == DataLabel.CONFIDENTIAL
 
+    def test_audit_data_label_confidential(self, coverage_registry, coverage_token, orchestrator_km):
+        _, mock_log, _ = _invoke_coverage(coverage_registry, coverage_token, orchestrator_km)
+        assert mock_log.call_args.kwargs["data_label"] == "CONFIDENTIAL"
+
     def test_audit_params_keys_not_values(self, coverage_registry, coverage_token, orchestrator_km):
-        result, mock_log, _ = _invoke_coverage(coverage_registry, coverage_token, orchestrator_km)
+        _, mock_log, _ = _invoke_coverage(coverage_registry, coverage_token, orchestrator_km)
         details = mock_log.call_args.kwargs["details"]
         assert "params_keys" in details
         assert "claim_id" not in details
+
+    def test_policy_data_from_db(self, coverage_registry, coverage_token, orchestrator_km):
+        """Policy fields must come from the mocked DB row."""
+        result, _, _ = _invoke_coverage(coverage_registry, coverage_token, orchestrator_km)
+        inner = result.value.value
+        assert inner["policy_type"] == "COMPREHENSIVE"
+        assert inner["deductible"] == 1000
+        assert inner["coverage_applicable"] is True

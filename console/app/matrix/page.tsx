@@ -1,4 +1,11 @@
+import type { Metadata } from "next";
 import { readFileSync } from "fs";
+
+export const metadata: Metadata = {
+  title: "Attack-Defense Matrix — SecureClaim AI",
+  description:
+    "All 79 attack categories: live-tested with measured block rates, architecturally prevented, or explicitly out of scope — each linked to evidence.",
+};
 import { join } from "path";
 import { ATTACKS, toMatrixRow } from "@/lib/data/attacks";
 import { MatrixShell } from "@/components/matrix/matrix-shell";

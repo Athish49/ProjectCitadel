@@ -1,0 +1,126 @@
+{
+  "corpora": {
+    "faq": [
+      {
+        "doc_id": "faq-001",
+        "hash": "a8a4a1d84f4caab55a696183ce5022fd5e3030e623cadbd01036fc8ee65b90c3"
+      },
+      {
+        "doc_id": "faq-002",
+        "hash": "3471882aeec7c074411c0d59207862e1ab599652c23b3456bfafe80f9aef1207"
+      },
+      {
+        "doc_id": "faq-003",
+        "hash": "0f9a7525286fb4d0130d21aa3ae0cdb477fff4d89d14312ab95e984592234d05"
+      },
+      {
+        "doc_id": "faq-004",
+        "hash": "807229bc8e40358998bed22ba6e91c83a58b2ace82efaa793f2ee1cbf4e2a604"
+      },
+      {
+        "doc_id": "faq-005",
+        "hash": "6d91d8f3b9b565399adfa40599060fb96292a5276906032e588c3b8e0e00e0de"
+      },
+      {
+        "doc_id": "faq-006",
+        "hash": "0df8288a5d6cba0447edc3bf8f501c4a38a52a4dbbb0797fc2b087f8fdfb53a7"
+      },
+      {
+        "doc_id": "faq-007",
+        "hash": "1bf7a156094dba55a4ce39ab3e5f137496c467d6d7c40bc0d76e50782462aae0"
+      },
+      {
+        "doc_id": "faq-008",
+        "hash": "251342fb6b4da0c02b9689c9505f28da5c956cd601420f7437bf7321fe52dc2c"
+      },
+      {
+        "doc_id": "faq-009",
+        "hash": "d9dc863c08dce2dade61ef4780e630b54744749541d842773fa0cf18dbbe0a94"
+      },
+      {
+        "doc_id": "faq-010",
+        "hash": "3dd11a6b8f1d2433fa5b16bcd2bd6cc0aebffc270a373085e82682065570c191"
+      }
+    ],
+    "fraud": [
+      {
+        "doc_id": "fraud-001",
+        "hash": "cab060b2bd76dfcc74f648aaea818d4e92b1eff60f8f76b23800e9d790404b53"
+      },
+      {
+        "doc_id": "fraud-002",
+        "hash": "c814817852028cf292f615385541ce2d4221b2df589f1447dd82964d04dacbdd"
+      },
+      {
+        "doc_id": "fraud-003",
+        "hash": "44bcd089f60bfb27060f3e8d93edbeb3237180bfeb508d53bb0be0ccd8cc9f98"
+      },
+      {
+        "doc_id": "fraud-004",
+        "hash": "207b7e5990e9c56f053fe56a404ec470d4ca1950edada00c3f14b9e3e7780c1e"
+      },
+      {
+        "doc_id": "fraud-005",
+        "hash": "c399560cac2a1dc08eb28ee53595c94df0a19abd93964d4d940392d556eba39b"
+      },
+      {
+        "doc_id": "fraud-006",
+        "hash": "2e46162be6a936884a99d08021347af2af5c3e43ccdc5a8cc389c9c838a00626"
+      },
+      {
+        "doc_id": "fraud-007",
+        "hash": "03f74c531aa7faf4a550a21c5d1aada189424451a5200e709d882e0d100c66ab"
+      },
+      {
+        "doc_id": "fraud-008",
+        "hash": "4b6682eff6323fb977ceb293e19f958d00eb32dc0b5780cd9cb19ee4cab8202a"
+      }
+    ],
+    "policy": [
+      {
+        "doc_id": "policy-001",
+        "hash": "c09689aeaaaf3435aaa8f3ed45de7ac1a4eac60f7b33e262d0cb48ee2825565f"
+      },
+      {
+        "doc_id": "policy-002",
+        "hash": "e830751b0340a43ae97a3f18182545621a5abd4b9f3894fec498193ceac676d6"
+      },
+      {
+        "doc_id": "policy-003",
+        "hash": "4d54450b2c321f649ca2a588741dcad1496156fa13cfbdfd829f03218cc8d6b7"
+      },
+      {
+        "doc_id": "policy-004",
+        "hash": "d77f33e049061dd1e13bb2c67c03ae5f8ffb694f883d188a6945617a9820cdee"
+      },
+      {
+        "doc_id": "policy-005",
+        "hash": "3a1c98fec6403f5f1a4054f9b87c480f173b98dc44bcf606e5326b447e5022bc"
+      },
+      {
+        "doc_id": "policy-006",
+        "hash": "20a1fdbb4f813b7684f1ea3ba961426a8982f9130d2d7482d0a80a0d1c1a0c32"
+      },
+      {
+        "doc_id": "policy-007",
+        "hash": "bcb859cfa91c0b6e0c8e4de95bdccfc068a46a89e1f8654eae9bec8e6cdc9f12"
+      },
+      {
+        "doc_id": "policy-008",
+        "hash": "b180d24fbec589610de0c2ae4f81db4147ed24ce823618877c56e2ab945fa7fd"
+      },
+      {
+        "doc_id": "policy-009",
+        "hash": "0929ee08e09788ac356b526369c6aaa00d7085f8291a84a01fc6c3ecaf5cf493"
+      },
+      {
+        "doc_id": "policy-010",
+        "hash": "108aecbe427e23925b7a83a476f7ba33c9b011fad957f6a4cebec10219bc34a4"
+      }
+    ]
+  },
+  "created_at": "2026-06-14T18:10:22.140271+00:00",
+  "public_key": "4846adc0288dadb3a0749bd8877252db0f671e4444fdea0eec7e590fc341028c",
+  "signature": "3e0620c966918bb9e693f932c92eae3461b92e6c0db9479f1477a13569cc7fe7b21058084139b6f9c9932db7ea69ac3f86be7ed89d47a18160cebf86e60e4101",
+  "version": "1"
+}

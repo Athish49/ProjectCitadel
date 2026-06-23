@@ -1,4 +1,11 @@
+import type { Metadata } from "next";
 import { AuditFeed } from "@/components/audit/audit-feed";
+
+export const metadata: Metadata = {
+  title: "Live Audit Feed — SecureClaim AI",
+  description:
+    "Real-time stream of audit events from the agent system — tool calls, capability decisions, sanitisation hits, and security events.",
+};
 import type { AuditAgent, AuditSeverity } from "@/lib/types/audit";
 
 const VALID_AGENTS: AuditAgent[] = [

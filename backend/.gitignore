@@ -31,6 +31,7 @@ data/attack_payloads/*.local.*
 *.pem
 *.key
 secrets/
+keys/
 
 # Container volumes mounted locally (just in case)
 /volumes/

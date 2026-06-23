@@ -1,12 +1,15 @@
 """Unit tests for classify_damage tool (Sprint 4.1.1).
 
-Tests cover:
-  - Pure function: determinism, full label coverage, confidence range, IFC output shape
-  - ToolRegistry integration: token gate passes, audit row written, Labeled value propagated
+The tool reads damage_classification from the evidence table via a ContextVar-
+injected DB connection (see agent_system/tools/tool_context.py).
+
+Pure tests set the ContextVar directly with a mock connection; registry tests
+set it implicitly via ToolRegistry.invoke() and verify audit propagation.
 """
 from __future__ import annotations
 
 import uuid
+from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -15,10 +18,12 @@ from agent_system.identity.keys import KeypairManager
 from agent_system.ifc.labels import DataLabel, Labeled
 from agent_system.tools.capability_tokens import issue_token
 from agent_system.tools.implementations.claims_tools import (
+    _CONFIDENCE,
     _DAMAGE_LABELS,
     classify_damage,
 )
 from agent_system.tools.registry import ToolRegistry
+from agent_system.tools.tool_context import _conn_var
 
 
 # ---------------------------------------------------------------------------
@@ -26,14 +31,37 @@ from agent_system.tools.registry import ToolRegistry
 # ---------------------------------------------------------------------------
 
 
-def _make_conn(used_at=None, row_exists=True):
+def _make_mock_conn(fetchone_return):
+    """Mock conn whose cursor returns *fetchone_return* on fetchone()."""
     conn = MagicMock()
     cur = MagicMock()
     cur.__enter__ = MagicMock(return_value=cur)
     cur.__exit__ = MagicMock(return_value=False)
-    cur.fetchone.return_value = (used_at,) if row_exists else None
+    cur.fetchone.return_value = fetchone_return
     conn.cursor.return_value = cur
     return conn
+
+
+def _make_registry_conn(damage_label: str):
+    """Mock conn for registry tests: first fetchone=replay-check, second=handler row."""
+    conn = MagicMock()
+    cur = MagicMock()
+    cur.__enter__ = MagicMock(return_value=cur)
+    cur.__exit__ = MagicMock(return_value=False)
+    cur.fetchone.side_effect = [(None,), (damage_label,)]
+    conn.cursor.return_value = cur
+    return conn
+
+
+@contextmanager
+def _conn_ctx(damage_label: str):
+    """Set ContextVar for pure-function tests; reset on exit."""
+    conn = _make_mock_conn((damage_label,))
+    token = _conn_var.set(conn)
+    try:
+        yield conn
+    finally:
+        _conn_var.reset(token)
 
 
 # ---------------------------------------------------------------------------
@@ -44,65 +72,93 @@ def _make_conn(used_at=None, row_exists=True):
 @pytest.mark.unit
 class TestClassifyDamagePure:
     def test_returns_labeled_dict(self):
-        result = classify_damage("ev-001")
+        with _conn_ctx("collision_minor"):
+            result = classify_damage("ev-001")
         assert isinstance(result, Labeled)
         assert isinstance(result.value, dict)
 
     def test_deterministic(self):
-        a = classify_damage("ev-determinism-check")
-        b = classify_damage("ev-determinism-check")
+        with _conn_ctx("weather_damage"):
+            a = classify_damage("ev-det")
+        with _conn_ctx("weather_damage"):
+            b = classify_damage("ev-det")
         assert a.value["damage_label"] == b.value["damage_label"]
         assert a.value["confidence"] == b.value["confidence"]
 
     def test_evidence_ref_echoed(self):
         ref = "ev-echo-test-abc"
-        result = classify_damage(ref)
+        with _conn_ctx("fire_damage"):
+            result = classify_damage(ref)
         assert result.value["evidence_ref"] == ref
 
     def test_value_has_required_keys(self):
-        result = classify_damage("ev-keys")
+        with _conn_ctx("total_loss"):
+            result = classify_damage("ev-keys")
         assert {"evidence_ref", "damage_label", "confidence"} <= result.value.keys()
 
     def test_damage_label_is_valid_category(self):
-        result = classify_damage("ev-valid-cat")
+        with _conn_ctx("vandalism_damage"):
+            result = classify_damage("ev-valid-cat")
         assert result.value["damage_label"] in _DAMAGE_LABELS
 
     def test_confidence_in_range(self):
-        result = classify_damage("ev-confidence-range")
+        with _conn_ctx("collision_severe"):
+            result = classify_damage("ev-confidence-range")
         conf = result.value["confidence"]
         assert 0.0 <= conf <= 1.0
 
-    def test_all_eight_labels_reachable(self):
-        """Probe enough distinct inputs to hit all 8 damage categories."""
-        seen: set[str] = set()
-        for i in range(200):
-            seen.add(classify_damage(f"probe-{i:04d}").value["damage_label"])
-            if len(seen) == len(_DAMAGE_LABELS):
-                break
-        assert seen == set(_DAMAGE_LABELS), (
-            f"Missing labels: {set(_DAMAGE_LABELS) - seen}"
-        )
+    def test_confidence_matches_label(self):
+        """Returned confidence must match the hardcoded per-label value."""
+        with _conn_ctx("animal_strike"):
+            result = classify_damage("ev-conf-match")
+        expected = _CONFIDENCE[result.value["damage_label"]]
+        assert result.value["confidence"] == expected
+
+    def test_unknown_label_gets_default_confidence(self):
+        """A non-standard label from DB gets the 0.80 fallback confidence."""
+        with _conn_ctx("unknown_category"):
+            result = classify_damage("ev-unknown")
+        assert result.value["confidence"] == 0.80
 
     def test_ifc_label_is_confidential(self):
-        result = classify_damage("ev-label-check")
+        with _conn_ctx("collision_moderate"):
+            result = classify_damage("ev-label-check")
         assert result.label.level == DataLabel.CONFIDENTIAL
 
     def test_ifc_label_not_untrusted(self):
-        result = classify_damage("ev-untrusted-check")
+        with _conn_ctx("total_loss"):
+            result = classify_damage("ev-untrusted-check")
         assert result.label.untrusted is False
 
-    def test_different_refs_may_differ(self):
-        """Two distinct refs should not always hash to the same bucket."""
-        labels = {classify_damage(f"ev-diff-{i}").value["damage_label"] for i in range(20)}
-        assert len(labels) > 1
+    def test_raises_when_no_row(self):
+        """ValueError when evidence_ref not found in DB."""
+        conn = _make_mock_conn(None)  # fetchone returns None → no row
+        token = _conn_var.set(conn)
+        try:
+            with pytest.raises(ValueError, match="No damage_classification"):
+                classify_damage("ev-missing")
+        finally:
+            _conn_var.reset(token)
 
-    def test_confidence_matches_label(self):
-        """The returned confidence must match the hardcoded per-label value."""
-        from agent_system.tools.implementations.claims_tools import _CONFIDENCE
+    def test_raises_when_classification_null(self):
+        """ValueError when evidence row exists but damage_classification is NULL."""
+        conn = _make_mock_conn((None,))  # row exists but column is NULL
+        token = _conn_var.set(conn)
+        try:
+            with pytest.raises(ValueError, match="No damage_classification"):
+                classify_damage("ev-null-class")
+        finally:
+            _conn_var.reset(token)
 
-        result = classify_damage("ev-conf-match")
-        expected = _CONFIDENCE[result.value["damage_label"]]
-        assert result.value["confidence"] == expected
+    def test_no_conn_context_raises_runtime_error(self):
+        """RuntimeError if called outside ToolRegistry (ContextVar not set)."""
+        # Ensure ContextVar is cleared for this test.
+        cv_token = _conn_var.set(None)
+        try:
+            with pytest.raises(RuntimeError, match="No database connection"):
+                classify_damage("ev-no-ctx")
+        finally:
+            _conn_var.reset(cv_token)
 
 
 # ---------------------------------------------------------------------------
@@ -132,10 +188,10 @@ def classify_token(orchestrator_km):
     )
 
 
-def _invoke_classify(registry, token, orchestrator_km, *, params=None, used_at=None, row_exists=True):
+def _invoke_classify(registry, token, orchestrator_km, *, params=None, damage_label="collision_minor"):
     if params is None:
         params = {"evidence_ref": "ev-token-001"}
-    conn = _make_conn(used_at=used_at, row_exists=row_exists)
+    conn = _make_registry_conn(damage_label)
     with (
         patch("agent_system.tools.registry.append_log", return_value=42) as mock_log,
         patch("agent_system.tools.registry.record_use") as mock_record,
@@ -165,28 +221,31 @@ class TestClassifyDamageRegistry:
         assert mock_log.call_args.kwargs["action"] == "tool_call_ok"
 
     def test_result_value_is_labeled(self, classify_registry, classify_token, orchestrator_km):
-        result, _, _ = _invoke_classify(
-            classify_registry, classify_token, orchestrator_km
-        )
+        result, _, _ = _invoke_classify(classify_registry, classify_token, orchestrator_km)
         assert isinstance(result.value, Labeled)
 
     def test_result_value_inner_dict_keys(self, classify_registry, classify_token, orchestrator_km):
-        result, _, _ = _invoke_classify(
-            classify_registry, classify_token, orchestrator_km
-        )
+        result, _, _ = _invoke_classify(classify_registry, classify_token, orchestrator_km)
         inner = result.value.value
         assert {"evidence_ref", "damage_label", "confidence"} <= inner.keys()
 
     def test_result_value_ifc_label_confidential(self, classify_registry, classify_token, orchestrator_km):
-        result, _, _ = _invoke_classify(
-            classify_registry, classify_token, orchestrator_km
-        )
+        result, _, _ = _invoke_classify(classify_registry, classify_token, orchestrator_km)
         assert result.value.label.level == DataLabel.CONFIDENTIAL
 
+    def test_audit_data_label_is_confidential(self, classify_registry, classify_token, orchestrator_km):
+        _, mock_log, _ = _invoke_classify(classify_registry, classify_token, orchestrator_km)
+        assert mock_log.call_args.kwargs["data_label"] == "CONFIDENTIAL"
+
     def test_audit_params_keys_not_values(self, classify_registry, classify_token, orchestrator_km):
-        result, mock_log, _ = _invoke_classify(
-            classify_registry, classify_token, orchestrator_km
-        )
+        _, mock_log, _ = _invoke_classify(classify_registry, classify_token, orchestrator_km)
         details = mock_log.call_args.kwargs["details"]
         assert "params_keys" in details
-        assert "evidence_ref" not in details
+        assert "ev-token-001" not in str(details)
+
+    def test_damage_label_from_db(self, classify_registry, classify_token, orchestrator_km):
+        """Registry must pass through whatever label the DB provides."""
+        result, _, _ = _invoke_classify(
+            classify_registry, classify_token, orchestrator_km, damage_label="total_loss"
+        )
+        assert result.value.value["damage_label"] == "total_loss"

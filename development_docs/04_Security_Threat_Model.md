@@ -167,7 +167,7 @@ For brevity, attacks with shared defense strategies are grouped. Each row of the
 | 68 | LIVE | P5 sandbox; `--network=none`, drop-capabilities, read-only rootfs. Escape-attempt test scripts. |
 | 69 | LIVE | P11 spend caps; Console shows real-time $. Adversarial agent's own cap demonstrated. |
 | 70 | LIVE | Per-session turn cap; tool-call cap; conversation length cap. |
-| 71 | LIVE | All WS connections authenticated with session JWT; origin pinning. |
+| 71 | ARCHITECTURAL | The showcase implementation uses no WebSocket connections — all live data is SSE (one-way server push) and bidirectional input is plain HTTP POST. WebSocket Hijacking is not applicable by construction. |
 | 72 | ARCHITECTURAL | No dynamic code execution; no agent has package-publish or fs-write tool. |
 
 ### 2.13 AI as Weapon (#73–75)

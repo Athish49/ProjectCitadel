@@ -6,6 +6,9 @@ All P4 tests use real Ed25519 key material.
 from __future__ import annotations
 
 import json
+from contextlib import contextmanager
+from datetime import date
+from decimal import Decimal
 from unittest.mock import MagicMock
 
 import pytest
@@ -19,25 +22,20 @@ from agent_system.actors.claims_processor_actor import (
 )
 from agent_system.identity.keys import KeypairManager
 from agent_system.tools.capability_tokens import CapabilityToken, issue_token
-from agent_system.tools.implementations.claims_tools import (
-    classify_damage,
-    lookup_coverage,
-    score_fraud,
-)
+from agent_system.tools.tool_context import _conn_var
 
 pytestmark = pytest.mark.unit
 
 _CID = "clm-test-001"
 _EREF = "ev-test-001"
 
-# Precompute expected envelope fields from deterministic stub functions.
-_EXPECTED_DAMAGE = classify_damage(_EREF).value["damage_label"]
-_expected_cov = lookup_coverage(_CID).value
-_EXPECTED_COV_CALC = (
-    f"{_expected_cov['policy_type'].lower()}_"
-    f"{'applicable' if _expected_cov['coverage_applicable'] else 'not_applicable'}"
-)
-_EXPECTED_FRAUD = score_fraud(_CID).value["decision"]
+# Expected envelope fields derived from the mock DB rows used in _make_actor_mock_conn():
+#   classify_damage  → "collision_minor"
+#   lookup_coverage  → COMPREHENSIVE / ACTIVE  → "comprehensive_applicable"
+#   score_fraud      → Decimal("25000.00") > 20k → FLAG
+_EXPECTED_DAMAGE = "collision_minor"
+_EXPECTED_COV_CALC = "comprehensive_applicable"
+_EXPECTED_FRAUD = "FLAG"
 
 
 # ---------------------------------------------------------------------------
@@ -98,6 +96,39 @@ def _audit_mock() -> MagicMock:
     return MagicMock()
 
 
+def _make_actor_mock_conn() -> MagicMock:
+    """Mock DB conn whose cursor.fetchone() dispatches by the last SQL executed.
+
+    classify_damage  → ("collision_minor",)
+    lookup_coverage  → ("COMPREHENSIVE", "STANDARD", 1000, 10000, "ACTIVE")
+    score_fraud      → (Decimal("25000.00"), date(2024,6,1), date(2023,1,1))
+    """
+    conn = MagicMock()
+    cur = MagicMock()
+    cur.__enter__ = MagicMock(return_value=cur)
+    cur.__exit__ = MagicMock(return_value=False)
+
+    _last_sql: list[str] = [""]
+
+    def _execute(sql: str, params=None) -> None:
+        _last_sql[0] = sql
+
+    def _fetchone():
+        sql = _last_sql[0]
+        if "evidence" in sql:
+            return ("collision_minor",)
+        if "total_claim_amount" in sql:
+            return (Decimal("25000.00"), date(2024, 6, 1), date(2023, 1, 1))
+        if "policy_type" in sql:
+            return ("COMPREHENSIVE", "STANDARD", 1000, 10000, "ACTIVE")
+        return None
+
+    cur.execute.side_effect = _execute
+    cur.fetchone.side_effect = _fetchone
+    conn.cursor.return_value = cur
+    return conn
+
+
 def _all_tool_blocks() -> list:
     return [
         _tool_block("classify_damage", {"evidence_ref": _EREF}, "tu_cd"),
@@ -115,15 +146,21 @@ def _run_actor(
     session_id: str = "sess-test",
     audit_fn=None,
 ) -> ProcessorEnvelope:
-    return run_claims_processor_actor(
-        claim_id=_CID,
-        evidence_ref=_EREF,
-        pre_issued_tokens=tokens,
-        orchestrator_public_key=orchestrator_km.public_key_bytes,
-        client=client,
-        session_id=session_id,
-        audit_fn=audit_fn,
-    )
+    # Inject a mock DB connection so that DB-backed tools work on the legacy
+    # (conn=None) actor path — ContextVar is reset even if the call raises.
+    _token = _conn_var.set(_make_actor_mock_conn())
+    try:
+        return run_claims_processor_actor(
+            claim_id=_CID,
+            evidence_ref=_EREF,
+            pre_issued_tokens=tokens,
+            orchestrator_public_key=orchestrator_km.public_key_bytes,
+            client=client,
+            session_id=session_id,
+            audit_fn=audit_fn,
+        )
+    finally:
+        _conn_var.reset(_token)
 
 
 # ---------------------------------------------------------------------------

@@ -27,7 +27,14 @@ export function PlaygroundShell({ initialTemplateId, initialTab, autorun }: Play
     const payload = tmpl?.payload ?? "[replay]";
 
     const id = setTimeout(() => {
-      submit(payload, tab, "intake", "sandboxed", { isReplay: true });
+      submit(
+        payload,
+        tab,
+        tmpl?.tab === "cross-customer" ? "claims" : tmpl?.tab === "tool" ? "settlement" : "intake",
+        "sandboxed",
+        tmpl ? { id: tmpl.attackId, name: tmpl.attackName } : undefined,
+        { isReplay: true },
+      );
     }, 300);
 
     return () => clearTimeout(id);

@@ -35,6 +35,7 @@ import psycopg
 
 from audit.chain import append_log
 from agent_system.ifc.labels import Labeled
+from agent_system.tools.tool_context import _conn_var
 from agent_system.tools.capability_tokens import (
     CapabilityToken,
     DenyReason,
@@ -201,10 +202,15 @@ class ToolRegistry:
             return InvokeResult.denied(DenyReason.SCOPE, log_id=log_id)
 
         # ── Step 4: call handler ─────────────────────────────────────────────
+        # Inject the DB connection via ContextVar so handlers can call
+        # get_tool_conn() without accepting conn as an explicit parameter
+        # (which would expose it to token-scope verification).
         handler = self._tools[tool_name]
+        _cv_token = _conn_var.set(conn)
         try:
             value = handler(**params)
         except Exception as exc:
+            _conn_var.reset(_cv_token)
             # Token gate passed; handler error is a tool-side failure, not a
             # security event.  Record the token as used (the gate was satisfied)
             # and audit the error so it is visible in the chain.
@@ -222,6 +228,7 @@ class ToolRegistry:
             return InvokeResult.error(exc, log_id=log_id)
 
         # ── Step 5: record success ───────────────────────────────────────────
+        _conn_var.reset(_cv_token)
         # Use the handler's own IFC label when it returns a Labeled value so
         # the audit row correctly reflects SECRET-labelled tools (e.g. score_fraud).
         audit_label = value.label.level.value if isinstance(value, Labeled) else "CONFIDENTIAL"

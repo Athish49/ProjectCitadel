@@ -1,4 +1,11 @@
+import type { Metadata } from "next";
 import { readFileSync } from "fs";
+
+export const metadata: Metadata = {
+  title: "Formal Specification — SecureClaim AI",
+  description:
+    "TLA+ workflow state-machine spec, Python BFS exhaustive checker (30 tests), and conformance suite (102 tests) with live CI results.",
+};
 import { join, resolve } from "path";
 import { FormalShell } from "@/components/formal/formal-shell";
 import type { CIResults } from "@/lib/types/showcase";

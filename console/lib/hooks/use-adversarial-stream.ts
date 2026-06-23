@@ -10,6 +10,7 @@ export function useAdversarialStream() {
   const [breachCount,   setBreachCount]   = useState(0);
   const [lastBreachAt,  setLastBreachAt]  = useState<string | null>(null);
   const [connected,     setConnected]     = useState(false);
+  const [totalAttempts, setTotalAttempts] = useState(0);
 
   const pausedRef = useRef(false);
   const [paused, setPaused] = useState(false);
@@ -25,6 +26,7 @@ export function useAdversarialStream() {
       try {
         const attempt = JSON.parse(e.data) as AdversarialAttempt;
         setAttempts((prev) => [attempt, ...prev].slice(0, MAX_ATTEMPTS));
+        setTotalAttempts((n) => n + 1);
       } catch {
         // ignore malformed events
       }
@@ -55,5 +57,5 @@ export function useAdversarialStream() {
     setAttempts([]);
   }, []);
 
-  return { attempts, breachCount, lastBreachAt, connected, paused, togglePause, clear };
+  return { attempts, breachCount, lastBreachAt, connected, paused, togglePause, clear, totalAttempts };
 }

@@ -93,7 +93,7 @@ export function PatternDetailShell({ pattern, extra }: PatternDetailShellProps) 
       {/* Pattern diagram */}
       <Section title="Pattern">
         <div className="mb-6 overflow-hidden rounded border border-bg-3">
-          <PatternDiagram id={pattern.id} className="h-[160px] w-full" />
+          <PatternDiagram id={pattern.id} className="h-[240px] w-full" variant="detail" />
         </div>
         <div
           className="font-mono text-sm leading-loose text-fg-2 [&_strong]:text-fg-0 [&_code]:rounded [&_code]:bg-bg-2 [&_code]:px-1 [&_code]:text-xs [&_code]:text-fg-1"

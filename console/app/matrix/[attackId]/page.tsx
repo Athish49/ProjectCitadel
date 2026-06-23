@@ -1,5 +1,23 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ attackId: string }>;
+}): Promise<Metadata> {
+  const { attackId } = await params;
+  const { ATTACKS, toMatrixRow } = await import("@/lib/data/attacks");
+  const id = parseInt(attackId, 10);
+  const entry = ATTACKS.find((a) => a.attackId === id);
+  if (!entry) return {};
+  const row = toMatrixRow(entry);
+  return {
+    title: `#${row.attackId} ${row.name} — Attack Matrix — SecureClaim AI`,
+    description: `${row.class} · ${row.patterns.join(", ")} · ${row.name}`,
+  };
+}
 import { ArrowLeft, Play, ShieldCheck, Shield, AlertTriangle } from "lucide-react";
 import { ATTACKS, toMatrixRow, getAttackCategory } from "@/lib/data/attacks";
 import { PATTERNS } from "@/lib/data/patterns";

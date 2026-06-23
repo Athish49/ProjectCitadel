@@ -33,9 +33,10 @@ import anthropic
 import psycopg
 
 from agent_system.egress.filter import filter_output
-from agent_system.ifc.labels import DataLabel, Label
+from agent_system.ifc.labels import DataLabel, Label, Labeled
 from agent_system.parser.schemas import IntakeOutput
 from agent_system.tools.capability_tokens import CapabilityToken, verify_token
+from agent_system.tools.implementations.rag_retrievers import search_public_faq
 from agent_system.tools.registry import ToolRegistry
 
 _LABEL_PUBLIC = Label(level=DataLabel.PUBLIC, untrusted=False)
@@ -188,32 +189,17 @@ def _handle_request_more_info(field: str) -> dict[str, Any]:
     return {"status": "more_info_requested", "field": field}
 
 
-def _handle_search_public_faq(query: str) -> dict[str, Any]:
-    return {
-        "results": [
-            {
-                "question": "What documents are required to file a claim?",
-                "answer": "Police report (if applicable), photos of damage, and repair estimates.",
-            },
-            {
-                "question": "How long does the claims process take?",
-                "answer": "Typically 5–7 business days after all documents are received.",
-            },
-        ]
-    }
-
-
-_HANDLERS: dict[str, Callable[..., dict[str, Any]]] = {
+_HANDLERS: dict[str, Callable[..., Any]] = {
     "mark_intake_complete": _handle_mark_intake_complete,
     "request_more_info": _handle_request_more_info,
-    "search_public_faq": _handle_search_public_faq,
+    "search_public_faq": search_public_faq,
 }
 
 # Module-level registry for the DB-backed path (task 2.2.3).
 _REGISTRY = ToolRegistry()
 _REGISTRY.register("mark_intake_complete", _handle_mark_intake_complete)
 _REGISTRY.register("request_more_info", _handle_request_more_info)
-_REGISTRY.register("search_public_faq", _handle_search_public_faq)
+_REGISTRY.register("search_public_faq", search_public_faq)
 
 
 # ---------------------------------------------------------------------------
@@ -396,7 +382,7 @@ def run_intake_actor(
                     agent_id=ACTOR_AGENT_ID,
                     action="tool_call_ok",
                     target=session_id,
-                    data_label="CONFIDENTIAL",
+                    data_label=result.label.level.value if isinstance(result, Labeled) else "CONFIDENTIAL",
                     details={"tool": tool_name},
                     security_event=False,
                 )
@@ -410,10 +396,11 @@ def run_intake_actor(
                 if terminal_tool is None:
                     terminal_tool = (tool_name, tool_input)
 
+            _result_inner = result.value if isinstance(result, Labeled) else result
             tool_results.append({
                 "type": "tool_result",
                 "tool_use_id": block.id,
-                "content": json.dumps(result),
+                "content": json.dumps(_result_inner, default=str),
             })
 
         messages.append({"role": "user", "content": tool_results})
@@ -482,8 +469,8 @@ helpful response based on the FAQ content.
 Keep the response factual and under 200 words.\
 """
 
-_FAQ_HANDLERS: dict[str, Callable[..., dict[str, Any]]] = {
-    "search_public_faq": _handle_search_public_faq,
+_FAQ_HANDLERS: dict[str, Callable[..., Any]] = {
+    "search_public_faq": search_public_faq,
 }
 
 MAX_FAQ_LOOP_ITERATIONS = 4
@@ -628,10 +615,11 @@ def run_faq_actor(
                 )
             # ─────────────────────────────────────────────────────────────
 
+            _result_inner = result.value if isinstance(result, Labeled) else result
             tool_results.append({
                 "type": "tool_result",
                 "tool_use_id": block.id,
-                "content": json.dumps(result),
+                "content": json.dumps(_result_inner, default=str),
             })
 
         messages.append({"role": "user", "content": tool_results})

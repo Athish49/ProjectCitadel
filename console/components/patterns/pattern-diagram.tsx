@@ -3,6 +3,7 @@
 import type { ReactElement } from "react";
 import { motion } from "framer-motion";
 import type { PatternId } from "@/lib/types/showcase";
+import { DETAIL_DIAGRAM_MAP } from "./pattern-diagram-detail";
 
 // All diagrams share a 120×72 viewBox. Colours from design tokens (inline for SVG compat).
 const C = {
@@ -482,10 +483,11 @@ const DIAGRAM_MAP: Record<PatternId, () => ReactElement> = {
 interface PatternDiagramProps {
   id: PatternId;
   className?: string;
+  variant?: "card" | "detail";
 }
 
-export function PatternDiagram({ id, className }: PatternDiagramProps) {
-  const Diagram = DIAGRAM_MAP[id];
+export function PatternDiagram({ id, className, variant = "card" }: PatternDiagramProps) {
+  const Diagram = variant === "detail" ? DETAIL_DIAGRAM_MAP[id] : DIAGRAM_MAP[id];
   return (
     <div className={className} style={{ background: C.bg, borderRadius: 4, overflow: "hidden" }}>
       <Diagram />

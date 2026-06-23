@@ -617,11 +617,19 @@ class TestSQLInjectionCrossCustomerProbes:
             with conn.cursor() as cur:
                 set_customer(cur, id_a)
                 for label, payload in self._SQL_INJECTION_PAYLOADS:
-                    cur.execute(
-                        "SELECT customer_id FROM customers WHERE customer_id::text = %s",
-                        (payload,),
-                    )
-                    rows = cur.fetchall()
+                    try:
+                        cur.execute(
+                            "SELECT customer_id FROM customers WHERE customer_id::text = %s",
+                            (payload,),
+                        )
+                        rows = cur.fetchall()
+                    except psycopg.errors.DataError:
+                        # PG 18+ rejects NUL bytes in text — the DB refused the input,
+                        # which is safe (no data exposed).  Re-open a fresh cursor.
+                        conn.rollback()
+                        cur = conn.cursor()
+                        set_customer(cur, id_a)
+                        continue
                     assert rows == [], (
                         f"[Attack #37] Injection '{label}' returned rows: {rows}"
                     )
@@ -640,11 +648,17 @@ class TestSQLInjectionCrossCustomerProbes:
             with conn.cursor() as cur:
                 set_customer(cur, id_a)
                 for label, payload in self._SQL_INJECTION_PAYLOADS:
-                    cur.execute(
-                        "SELECT claim_id FROM claims WHERE claim_number = %s",
-                        (payload,),
-                    )
-                    rows = cur.fetchall()
+                    try:
+                        cur.execute(
+                            "SELECT claim_id FROM claims WHERE claim_number = %s",
+                            (payload,),
+                        )
+                        rows = cur.fetchall()
+                    except psycopg.errors.DataError:
+                        conn.rollback()
+                        cur = conn.cursor()
+                        set_customer(cur, id_a)
+                        continue
                     assert rows == [], (
                         f"[Attack #37] claim_number injection '{label}' returned rows: {rows}"
                     )
@@ -674,11 +688,17 @@ class TestSQLInjectionCrossCustomerProbes:
                 with conn.cursor() as cur:
                     set_customer(cur, id_a)
                     for label, payload in self._SQL_INJECTION_PAYLOADS:
-                        cur.execute(
-                            "SELECT evidence_id FROM evidence WHERE evidence_type = %s",
-                            (payload,),
-                        )
-                        rows = cur.fetchall()
+                        try:
+                            cur.execute(
+                                "SELECT evidence_id FROM evidence WHERE evidence_type = %s",
+                                (payload,),
+                            )
+                            rows = cur.fetchall()
+                        except psycopg.errors.DataError:
+                            conn.rollback()
+                            cur = conn.cursor()
+                            set_customer(cur, id_a)
+                            continue
                         # Payload is not a real evidence_type value, so 0 rows expected;
                         # crucially, B's evidence must never appear.
                         for row in rows:
@@ -686,9 +706,9 @@ class TestSQLInjectionCrossCustomerProbes:
                                 f"[Attack #37] evidence_type injection '{label}' "
                                 f"exposed victim B's evidence"
                             )
-        finally:
-            conn.rollback()
-            conn.close()
+            finally:
+                conn.rollback()
+                conn.close()
         finally:
             with conn_admin.cursor() as cur:
                 cur.execute("DELETE FROM evidence WHERE evidence_id = %s", (ev_b,))

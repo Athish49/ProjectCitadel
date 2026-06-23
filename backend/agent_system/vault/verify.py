@@ -6,14 +6,12 @@ identity-verifier actor which holds the appropriate capability token.
 
 Architecture note
 -----------------
-In a production-shaped deployment this function would be a Postgres
-SECURITY DEFINER stored procedure owned by a vault-privileged role, so
-the calling application role never needs direct pii_vault access.  In
-this Python implementation the caller is responsible for passing a
-connection that has SELECT on pii_vault and customers (e.g. the seeder
-or a dedicated vault-reader connection).  Agent connections (which hold
-role_identity_verifier) reach this function via a server-side trampoline
-that escalates privileges for the duration of the call only.
+pii_vault access is mediated entirely by the Postgres SECURITY DEFINER
+function public.get_vault_data() (migration 006).  role_identity_verifier
+holds no direct SELECT on pii_vault; the function runs as neondb_owner
+(function owner) and returns only (customer_id, date_of_birth, ssn_last4).
+The LEFT JOIN inside get_vault_data preserves the policy_not_found /
+vault_row_missing audit distinction without exposing any other vault columns.
 
 Lockout policy
 --------------
@@ -97,9 +95,14 @@ def _verify(
             )
             return VerifyResult(verified=False, outcome="LOCKOUT", attempts_remaining=0)
 
-        # ── Step 2: look up customer ──────────────────────────────────────
+        # ── Steps 2+3: fetch customer + vault data via SECURITY DEFINER ──
+        # get_vault_data() runs as the function owner (neondb_owner) so
+        # role_identity_verifier never needs direct pii_vault access.
+        # LEFT JOIN means: no row → policy_not_found; row with NULL ssn_last4
+        # → vault_row_missing.
         cur.execute(
-            "SELECT customer_id, date_of_birth FROM customers WHERE policy_number = %s",
+            "SELECT out_customer_id, out_date_of_birth, out_ssn_last4"
+            " FROM public.get_vault_data(%s)",
             (policy_number,),
         )
         row = cur.fetchone()
@@ -117,14 +120,9 @@ def _verify(
 
         customer_id: uuid.UUID = row[0]
         stored_dob: date = row[1]
+        stored_last4: str | None = row[2]
 
-        # ── Step 3: look up pii_vault ────────────────────────────────────
-        cur.execute(
-            "SELECT ssn_last4 FROM pii_vault WHERE customer_id = %s",
-            (customer_id,),
-        )
-        vault_row = cur.fetchone()
-        if vault_row is None:
+        if stored_last4 is None:
             _insert_attempt(cur, session_id, customer_id, policy_number, "FAIL_MATCH")
             _insert_security_event(
                 cur,
@@ -135,8 +133,6 @@ def _verify(
             )
             remaining = max(0, MAX_ATTEMPTS - (fail_count + 1))
             return VerifyResult(verified=False, outcome="FAIL_MATCH", attempts_remaining=remaining)
-
-        stored_last4: str = vault_row[0]
 
         # ── Step 4: constant-time credential check ───────────────────────
         # Normalise DOB to ISO string for comparison.

@@ -351,6 +351,10 @@ class TestOutcomeNoTerminalTool:
 
 
 class TestMultiRoundLoop:
+    @pytest.fixture(autouse=True)
+    def _force_faq_stub(self, monkeypatch):
+        monkeypatch.delenv("QDRANT_URL", raising=False)
+
     def test_two_round_outcome_ready(self, orchestrator_km, all_tokens, intake_output):
         client = _mock_client(
             _response(
@@ -415,6 +419,10 @@ class TestMultiRoundLoop:
 
 
 class TestLoopExhausted:
+    @pytest.fixture(autouse=True)
+    def _force_faq_stub(self, monkeypatch):
+        monkeypatch.delenv("QDRANT_URL", raising=False)
+
     def test_exhausted_outcome_reject(self, orchestrator_km, all_tokens, intake_output):
         faq_response = _response(
             [_tool_block("search_public_faq", {"query": "coverage"})], "tool_use"

@@ -65,6 +65,17 @@ INCIDENT_TYPES = [
     "Fire",
 ]
 
+_DAMAGE_LABELS: list[str] = [
+    "collision_minor",
+    "collision_moderate",
+    "collision_severe",
+    "total_loss",
+    "weather_damage",
+    "fire_damage",
+    "vandalism_damage",
+    "animal_strike",
+]
+
 MAKES_MODELS = [
     ("Toyota", "Camry"), ("Honda", "Civic"), ("Ford", "F-150"),
     ("Chevrolet", "Silverado"), ("Nissan", "Altima"), ("BMW", "3 Series"),
@@ -255,13 +266,15 @@ def seed(conn: psycopg.Connection) -> None:
                     ev_type = "PDF" if ext == "pdf" else "PHOTO"
                     sha_orig = hashlib.sha256(uuid.uuid4().bytes).hexdigest()
                     sha_san = hashlib.sha256((sha_orig + "sanitised").encode()).hexdigest()
+                    damage_class = _DAMAGE_LABELS[(i + j) % len(_DAMAGE_LABELS)]
                     cur.execute(
                         """
                         INSERT INTO evidence (
                             claim_id, evidence_type, original_filename,
                             sha256_original, sanitised_path, sha256_sanitised,
-                            sanitisation_status, extracted_text_label
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                            sanitisation_status, extracted_text_label,
+                            damage_classification
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                         """,
                         (
                             cid, ev_type,
@@ -271,6 +284,7 @@ def seed(conn: psycopg.Connection) -> None:
                             sha_san,
                             "CLEAN",
                             "UNTRUSTED",
+                            damage_class,
                         ),
                     )
 

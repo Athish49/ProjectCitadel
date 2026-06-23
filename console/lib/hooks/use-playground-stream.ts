@@ -71,8 +71,9 @@ export function usePlaygroundStream() {
     async (
       payload: string,
       tab: AttackComposerTab,
-      _targetFlow: TargetFlow,
+      targetFlow: TargetFlow,
       _sessionMode: SessionMode,
+      templateAttack?: { id: number; name: string },
       options?: { isReplay?: boolean }
     ) => {
       // Clean up any previous stream
@@ -90,7 +91,12 @@ export function usePlaygroundStream() {
         const res = await fetch("/api/showcase/playground", {
           method:  "POST",
           headers: { "Content-Type": "application/json" },
-          body:    JSON.stringify({ payload, tab }),
+          body:    JSON.stringify({
+            payload,
+            tab,
+            targetFlow,
+            ...(templateAttack ? { attackId: templateAttack.id, attackName: templateAttack.name } : {}),
+          }),
         });
 
         if (!res.ok) {
@@ -113,6 +119,7 @@ export function usePlaygroundStream() {
         attackId:    attack.id,
         attackName:  attack.name,
         tab,
+        targetFlow,
         submittedAt: new Date().toISOString().replace("T", " ").replace(/\.\d+Z$/, "Z"),
         layers:      buildInitialLayers(),
         verdict:     null,
@@ -125,6 +132,17 @@ export function usePlaygroundStream() {
       // ── Subscribe to SSE ──────────────────────────────────────────────────
       const es = new EventSource(sseUrl);
       esRef.current = es;
+
+      es.addEventListener("stream_error", (e: MessageEvent) => {
+        const data = JSON.parse(e.data) as { message: string };
+        setState((prev) => ({
+          ...prev,
+          isStreaming: false,
+          error: data.message,
+        }));
+        es.close();
+        esRef.current = null;
+      });
 
       es.addEventListener("layer_result", (e: MessageEvent) => {
         const data = JSON.parse(e.data) as LayerResultPayload;
@@ -142,8 +160,8 @@ export function usePlaygroundStream() {
                 events:     data.events,
               };
             }
-            // Mark next layer as running (only if still pending)
-            if (i === idx + 1 && l.status === "pending") {
+            // Mark next layer as running only if this layer passed (not blocked)
+            if (i === idx + 1 && l.status === "pending" && data.status !== "blocked") {
               return { ...l, status: "running" };
             }
             return l;
@@ -163,11 +181,18 @@ export function usePlaygroundStream() {
           summary:          data.summary,
         };
 
-        setState((prev) => ({
-          ...prev,
-          isStreaming: false,
-          trace: prev.trace ? { ...prev.trace, verdict } : null,
-        }));
+        setState((prev) => {
+          if (!prev.trace) return { ...prev, isStreaming: false };
+          // Reset any layers still "running" — they weren't evaluated before the stream ended
+          const layers = prev.trace.layers.map((l): TraceLayer =>
+            l.status === "running" ? { ...l, status: "pending" as TraceLayerStatus } : l
+          );
+          return {
+            ...prev,
+            isStreaming: false,
+            trace: { ...prev.trace, layers, verdict },
+          };
+        });
 
         es.close();
         esRef.current = null;

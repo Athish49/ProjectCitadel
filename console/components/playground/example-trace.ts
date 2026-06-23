@@ -13,6 +13,7 @@ export function buildExampleTrace(attackId: number, attackName: string): Playgro
     attackId,
     attackName,
     tab: "chat",
+    targetFlow: "intake",
     submittedAt: fmt(0),
     isExample: true,
     isReplay: false,

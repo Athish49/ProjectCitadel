@@ -20,6 +20,8 @@ dependencies = [
     "cryptography>=43.0",
     "pytesseract>=0.3.13",
     "anthropic>=0.105.2",
+    "openai>=1.0",
+    "qdrant-client[fastembed]>=1.12",
 ]
 
 [dependency-groups]

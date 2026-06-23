@@ -1,8 +1,8 @@
 # SecureClaim AI — Resilience Console (Showcase Platform Spec)
 
-**Version:** 2.0
-**Date:** May 27, 2026
-**Status:** Final v2.0
+**Version:** 2.1
+**Date:** June 14, 2026
+**Status:** Updated v2.1
 **Author:** Athish G R
 **Classification:** Internal
 
@@ -549,13 +549,14 @@ On playground and matrix detail pages, a "Compare" toggle runs the same payload 
 
 ```
 Agent system (API) ──── REST ────→  Console (SSR / RSC)
-                  ──── SSE  ────→  Live streams (audit, adversarial)
-                  ──── WS   ────→  Playground bidirectional
+                  ──── SSE  ────→  Live streams (audit, adversarial, playground defense trace)
 
 CI runs ──── webhook ──→ matrix-data updater
 Adversarial agent ──── stdout ──→ adversarial-stream
 OTel traces ──── Tempo ──→ replay viewer
 ```
+
+All real-time Console data is delivered via Server-Sent Events. WebSocket is **not** used.
 
 ### 8.2 SSE channels
 
@@ -621,7 +622,7 @@ Measured via Vercel Analytics; surfaced as a badge on the About page ("This site
 | Framework | Next.js 15 (App Router, RSC) | |
 | Styling | Tailwind v4 + custom design tokens | shadcn/ui scaffolded; components hand-tuned |
 | State | React `useState` / `useEffect` | TanStack Query deferred to Phase 6 |
-| Live data | EventSource (SSE) custom hooks | WebSocket scaffolded; SSE used in practice |
+| Live data | EventSource (SSE) via `use-playground-stream` and `use-adversarial-stream` hooks | All live channels use SSE; WebSocket not used |
 | Diagrams | React Flow (@xyflow/react v12) | |
 | Markdown | react-markdown + remark-gfm | `/docs` viewer |
 | Code rendering | Shiki | Python, TypeScript, SQL, TLA+ (via plaintext) |
@@ -658,10 +659,13 @@ console/
 │   ├── matrix/
 │   └── live/                     # SSE consumers
 ├── lib/
-│   ├── api.ts                    # API client
-│   ├── sse.ts                    # SSE hooks
-│   ├── ws.ts                     # WebSocket helpers
-│   └── trust.ts                  # label rendering
+│   ├── hooks/
+│   │   ├── use-playground-stream.ts   # playground SSE consumer + layer state machine
+│   │   └── use-adversarial-stream.ts  # adversarial feed SSE consumer
+│   ├── types/
+│   │   ├── playground.ts              # TraceLayer, TraceVerdict, LAYER_DEFINITIONS (P1–P10)
+│   │   └── showcase.ts                # shared showcase types (PatternId, etc.)
+│   └── utils.ts                       # cn() and shared utilities
 ├── public/
 └── tests/
     ├── unit/

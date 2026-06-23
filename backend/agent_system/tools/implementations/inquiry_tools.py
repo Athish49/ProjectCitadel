@@ -1,33 +1,22 @@
 """Tool implementations for the Inquiry actor (Sprint 4.1, tasks 4.1.8–4.1.9).
 
-lookup_claim_status
-  Deterministic stub returning a CONFIDENTIAL-labelled claim status record.
-  Derives claim_number, claim_stage, incident_type, incident_date, and
-  total_claim_amount from a SHA-256 hash of claim_id.  Mirrors the claims
-  table schema (Doc 03 §2.2) so the stub is coherent with seed values.
+lookup_claim_status  — SELECT from claims table (CONFIDENTIAL, P3 + P9)
+capture_complaint    — INSERT into complaints table (CONFIDENTIAL, P3 + P9)
 
-  NOTE: Production implementation should SELECT from claims WHERE claim_id = %s
-  under the customer's RLS row_context.  RLS enforcement deferred to the sprint
-  that adds the real DB read path (P7).
+Both tools require a DB connection injected by ToolRegistry via ContextVar
+(agent_system.tools.tool_context.get_tool_conn).
 
-capture_complaint
-  Deterministic stub recording a customer complaint and returning ESCALATED
-  status.  complaint_id derived from SHA-256 of session_id+category+description
-  so the same complaint always maps to the same UUID.  category is validated
-  against _COMPLAINT_CATEGORIES; unknown values are coerced to "other".
-
-  NOTE: Production implementation should INSERT into complaints table (Doc 03
-  §2.13) and trigger ESCALATED stage transition via the orchestrator.
-
-IFC convention: both tools return Labeled[dict] (CONFIDENTIAL).
+capture_complaint additionally requires customer_id to perform the DB INSERT
+(complaints.customer_id is NOT NULL).  When customer_id is None the function
+still returns an ESCALATED envelope but omits the DB write; the canonical call
+path always provides customer_id.
 """
 from __future__ import annotations
 
-import hashlib
 import uuid as _uuid_mod
-from datetime import date, timedelta
 
 from agent_system.ifc.labels import DataLabel, Label, Labeled
+from agent_system.tools.tool_context import get_tool_conn
 
 _LABEL_CONFIDENTIAL = Label(level=DataLabel.CONFIDENTIAL, untrusted=False)
 
@@ -51,10 +40,6 @@ _INCIDENT_TYPES: list[str] = [
     "animal_strike",
 ]
 
-# Base date for deterministic incident_date derivation.
-_BASE_DATE = date(2024, 1, 1)
-_DATE_RANGE_DAYS = 365
-
 _COMPLAINT_CATEGORIES: list[str] = [
     "service",
     "coverage",
@@ -64,87 +49,126 @@ _COMPLAINT_CATEGORIES: list[str] = [
 ]
 
 
+def _to_uuid(value: str) -> _uuid_mod.UUID:
+    """Parse *value* as UUID; derive a stable UUID5 if not a valid UUID string."""
+    try:
+        return _uuid_mod.UUID(value)
+    except ValueError:
+        return _uuid_mod.uuid5(_uuid_mod.NAMESPACE_DNS, value)
+
+
+# ---------------------------------------------------------------------------
+# Tool: lookup_claim_status
+# ---------------------------------------------------------------------------
+
+
 def lookup_claim_status(claim_id: str) -> Labeled[dict]:
-    """Deterministic stub claim-status lookup (P3 + P9 via ToolRegistry).
+    """Return current status fields for *claim_id* from the claims table.
 
     Args:
-        claim_id: claim_id string (UUID or any stable identifier).
+        claim_id: claim_id (UUID string) subject to the caller's RLS context.
 
     Returns:
-        Labeled[dict] with data_label=CONFIDENTIAL containing:
-            claim_id            — echoed back for traceability
-            claim_number        — human-readable CLM-XXXXXXXX (from hash)
-            claim_stage         — one of 8 pipeline stages (from hash)
-            incident_type       — one of 6 incident types (from hash)
-            incident_date       — ISO-8601 date string within 2024 (from hash)
-            total_claim_amount  — float dollars, 500–50,000 range (from hash)
+        Labeled[dict] (CONFIDENTIAL) with claim_id, claim_number, claim_stage,
+        incident_type, incident_date (ISO-8601 string), total_claim_amount (float).
 
-    NOTE: Production path queries claims under the customer's RLS policy
-    (P7 — row_context set before SELECT; see Dev Doc 03 §2.2).
-    The ToolRegistry writes the tool_call_ok / tool_call_denied audit row;
-    this function writes nothing to the database.
+    Raises:
+        ValueError: when no row exists for claim_id under the current RLS context.
     """
-    h = int(hashlib.sha256(claim_id.encode()).hexdigest(), 16)
+    conn = get_tool_conn()
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT claim_number, claim_stage, incident_type,
+                   incident_date, total_claim_amount
+            FROM claims
+            WHERE claim_id = %s
+            """,
+            (claim_id,),
+        )
+        row = cur.fetchone()
 
-    claim_number = f"CLM-{h % 100_000_000:08d}"
-    claim_stage = _CLAIM_STAGES[h % len(_CLAIM_STAGES)]
-    incident_type = _INCIDENT_TYPES[(h >> 8) % len(_INCIDENT_TYPES)]
-    incident_date = (_BASE_DATE + timedelta(days=(h >> 16) % _DATE_RANGE_DAYS)).isoformat()
-    # Amount: 500 + deterministic offset up to 49,500 (two decimal precision)
-    total_claim_amount = round(500.0 + ((h >> 32) % 49_500) + ((h >> 48) % 100) / 100.0, 2)
+    if row is None:
+        raise ValueError(f"No claim found for claim_id={claim_id!r}")
+
+    claim_number, claim_stage, incident_type, incident_date, total_claim_amount = row
 
     return Labeled(
         value={
-            "claim_id": claim_id,
-            "claim_number": claim_number,
-            "claim_stage": claim_stage,
-            "incident_type": incident_type,
-            "incident_date": incident_date,
-            "total_claim_amount": total_claim_amount,
+            "claim_id":           claim_id,
+            "claim_number":       claim_number,
+            "claim_stage":        claim_stage,
+            "incident_type":      incident_type,
+            "incident_date":      (
+                incident_date.isoformat()
+                if hasattr(incident_date, "isoformat")
+                else str(incident_date)
+            ),
+            "total_claim_amount": float(total_claim_amount),
         },
         label=_LABEL_CONFIDENTIAL,
     )
+
+
+# ---------------------------------------------------------------------------
+# Tool: capture_complaint
+# ---------------------------------------------------------------------------
 
 
 def capture_complaint(
     session_id: str,
     category: str,
     description: str,
+    customer_id: str | None = None,
 ) -> Labeled[dict]:
-    """Deterministic stub complaint capture (P3 + P9 via ToolRegistry).
+    """Record a customer complaint and return ESCALATED status.
 
     Args:
-        session_id:  Session identifier; echoed in the complaint record.
-        category:    One of service/coverage/decision/process/other.
-                     Unknown values are coerced to "other".
-        description: Free-text description of the complaint.
+        session_id:   Session identifier (string or UUID string).
+        category:     One of service/coverage/decision/process/other.
+                      Unknown values are coerced to "other".
+        description:  Free-text description of the complaint.
+        customer_id:  Customer UUID string.  Required for the DB INSERT;
+                      when None the function returns an ESCALATED envelope
+                      without writing to the complaints table.
 
     Returns:
-        Labeled[dict] with data_label=CONFIDENTIAL containing:
-            complaint_id — UUID derived from SHA-256(session_id:category:description)
-            session_id   — echoed back for traceability
-            category     — validated/coerced complaint category
-            status       — always "ESCALATED" (triggers stage transition)
-
-    NOTE: Production path INSERTs into complaints table (Doc 03 §2.13) and
-    triggers the IDENTITY_VERIFIED → ESCALATED transition via the orchestrator.
-    The ToolRegistry writes the tool_call_ok / tool_call_denied audit row;
-    this function writes nothing to the database.
+        Labeled[dict] (CONFIDENTIAL) with complaint_id, session_id, category, status.
     """
     if category not in _COMPLAINT_CATEGORIES:
         category = "other"
 
-    raw_hash = hashlib.sha256(
-        f"{session_id}:{category}:{description}".encode()
-    ).hexdigest()
-    complaint_id = str(_uuid_mod.UUID(raw_hash[:32]))
+    # Derive a stable complaint_id from the call inputs so that the same
+    # complaint always produces the same UUID.
+    complaint_id = str(
+        _uuid_mod.uuid5(
+            _uuid_mod.NAMESPACE_DNS,
+            f"{session_id}:{category}:{description}",
+        )
+    )
+
+    if customer_id is not None:
+        conn = get_tool_conn()
+        session_uuid = _to_uuid(session_id)
+        customer_uuid = _uuid_mod.UUID(customer_id)
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO complaints
+                    (complaint_id, session_id, customer_id,
+                     category, description, status)
+                VALUES (%s, %s, %s, %s, %s, 'ESCALATED')
+                ON CONFLICT (complaint_id) DO NOTHING
+                """,
+                (complaint_id, session_uuid, customer_uuid, category, description),
+            )
 
     return Labeled(
         value={
             "complaint_id": complaint_id,
-            "session_id": session_id,
-            "category": category,
-            "status": "ESCALATED",
+            "session_id":   session_id,
+            "category":     category,
+            "status":       "ESCALATED",
         },
         label=_LABEL_CONFIDENTIAL,
     )

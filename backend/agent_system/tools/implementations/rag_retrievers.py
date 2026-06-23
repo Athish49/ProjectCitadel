@@ -1,42 +1,46 @@
-"""RAG retriever tools for the Claims Processor actor (Sprint 4.1).
+"""RAG retriever tools for the Claims Processor and Intake actors (Sprint 4.1).
 
 Task 4.1.4 — search_policy_docs
-  Confidential RAG retriever for policy documents.  Returns a CONFIDENTIAL-
-  labelled result containing the top-n ranked chunks from an inline stub corpus.
-
-  The stub selects chunks deterministically from an inline corpus using a
-  SHA-256 hash of the query so the same query always returns the same chunks
-  without any ChromaDB I/O.  When ChromaDB is available and the `policy_docs`
-  collection is seeded (Step 6 of the seed process), this function body will
-  be replaced by a real embedding query against the collection.
-
-  Each returned chunk is individually tagged with data_label="CONFIDENTIAL"
-  (Doc 03 §6.1 item 2: "Tags each returned chunk with its source label").
-
-  Doc 03 §6.1 specifies a `rag_retrieval` audit action; the registry uses
-  `tool_call_ok` uniformly. The action name is a cosmetic concern; the
-  data_label, agent, tool target, and details are the load-bearing fields
-  and all correct.
+  Confidential RAG retriever for policy documents. When QDRANT_URL is set,
+  queries the live Qdrant `ProjectCitadel-policy_docs` collection using
+  BAAI/bge-small-en-v1.5 embeddings via fastembed. Falls back to the inline
+  corpus stub when Qdrant is not configured (unit tests without credentials).
 
 Task 4.1.5 — search_fraud_rules
-  Secret RAG retriever for fraud-rule documents.  Identical architecture to
-  search_policy_docs but the returned label is SECRET.  See task 4.1.5.
+  Secret RAG retriever for fraud-rule documents. Same architecture, queries
+  `ProjectCitadel-fraud_rules`.
+
+Task 4.2.2 — search_public_faq
+  Public RAG retriever for customer-facing FAQ documents. Queries
+  `ProjectCitadel-public_faq`. NOTE: Qdrant API key must be re-issued with
+  rw scope for ProjectCitadel-public_faq before live ingestion will succeed.
 
 IFC + audit:
-  Both retrievers return Labeled[dict]; the ToolRegistry step-5 dynamic-label
+  All retrievers return Labeled[dict]; the ToolRegistry step-5 dynamic-label
   fix (registry.py, task 4.1.3) ensures audit rows record the correct label.
 """
 from __future__ import annotations
 
 import hashlib
+import os
+from typing import TYPE_CHECKING
 
 from agent_system.ifc.labels import DataLabel, Label, Labeled
 
+if TYPE_CHECKING:
+    from fastembed import TextEmbedding
+    from qdrant_client import QdrantClient
+
+_LABEL_PUBLIC       = Label(level=DataLabel.PUBLIC,       untrusted=False)
 _LABEL_CONFIDENTIAL = Label(level=DataLabel.CONFIDENTIAL, untrusted=False)
 _LABEL_SECRET       = Label(level=DataLabel.SECRET,       untrusted=False)
 
+_EMBED_MODEL = "BAAI/bge-small-en-v1.5"
+
 # ---------------------------------------------------------------------------
-# Inline policy-document corpus (stub; ~10 docs; mirrors policy_docs collection)
+# Inline policy-document corpus
+# Kept as module-level constants: used for ingestion (db/ingest.py) and
+# imported directly by unit tests for corpus size / doc_id assertions.
 # ---------------------------------------------------------------------------
 
 _POLICY_CORPUS: list[dict] = [
@@ -159,13 +163,13 @@ _POLICY_CORPUS: list[dict] = [
     },
 ]
 
-# Stub relevance scores assigned in descending order to the selected window.
-_STUB_SCORES: list[float] = [0.93, 0.88, 0.84, 0.79, 0.74]
-
 _N_CORPUS = len(_POLICY_CORPUS)
 
+# Stub relevance scores (used only when Qdrant is not configured).
+_STUB_SCORES: list[float] = [0.93, 0.88, 0.84, 0.79, 0.74]
+
 # ---------------------------------------------------------------------------
-# Inline fraud-rule corpus (stub; ~8 docs; mirrors fraud_rules collection)
+# Inline fraud-rule corpus
 # ---------------------------------------------------------------------------
 
 _FRAUD_CORPUS: list[dict] = [
@@ -273,6 +277,207 @@ _FRAUD_CORPUS: list[dict] = [
 
 _N_FRAUD_CORPUS = len(_FRAUD_CORPUS)
 
+# ---------------------------------------------------------------------------
+# Inline public FAQ corpus (PUBLIC)
+# ---------------------------------------------------------------------------
+
+_FAQ_CORPUS: list[dict] = [
+    {
+        "doc_id": "faq-001",
+        "source": "CustomerFAQ.pdf §1.1",
+        "text": (
+            "HOW LONG DOES THE CLAIMS PROCESS TAKE? Standard physical-damage claims are "
+            "typically processed within 5–7 business days after all required documents are "
+            "received. Complex or disputed claims, or those requiring Special Investigations "
+            "Unit review, may take 2–4 weeks. You will receive status updates by email and "
+            "through the customer portal throughout the process."
+        ),
+    },
+    {
+        "doc_id": "faq-002",
+        "source": "CustomerFAQ.pdf §1.2",
+        "text": (
+            "WHAT DOCUMENTS ARE REQUIRED TO FILE A CLAIM? You will need: a completed claim "
+            "form, photographs of all damage, a police report (if applicable — required for "
+            "theft, vandalism, or collision with another vehicle), repair estimates from a "
+            "licensed body shop, and your policy number and vehicle identification number (VIN). "
+            "Additional documents may be requested during the review process."
+        ),
+    },
+    {
+        "doc_id": "faq-003",
+        "source": "CustomerFAQ.pdf §1.3",
+        "text": (
+            "HOW DO I CONTACT MY CLAIMS ADJUSTER? After filing a claim online or by phone, "
+            "you will be assigned a claims adjuster within one business day. Their contact "
+            "information is included in your claim confirmation email. You can also log in "
+            "to the customer portal to message your adjuster directly or schedule a call. "
+            "Adjusters are available Monday–Friday, 8 AM–6 PM local time."
+        ),
+    },
+    {
+        "doc_id": "faq-004",
+        "source": "CustomerFAQ.pdf §2.1",
+        "text": (
+            "IS A RENTAL CAR COVERED WHILE MY VEHICLE IS BEING REPAIRED? Rental reimbursement "
+            "coverage is available if you purchased it as an endorsement on your policy. "
+            "Coverage is typically $30–$50 per day up to a maximum of 30 days. Your specific "
+            "daily limit and maximum are shown on your Declarations page. Rental coverage "
+            "begins on the date your vehicle is dropped off for repairs and ends when repairs "
+            "are complete or the maximum is reached, whichever comes first."
+        ),
+    },
+    {
+        "doc_id": "faq-005",
+        "source": "CustomerFAQ.pdf §2.2",
+        "text": (
+            "WHAT IS A DEDUCTIBLE AND HOW DOES IT WORK? A deductible is the amount you pay "
+            "out-of-pocket before insurance coverage applies to a claim. For example, if your "
+            "deductible is $500 and your repair costs $3,000, you pay $500 and we pay the "
+            "remaining $2,500. Separate deductibles may apply for Collision and Comprehensive "
+            "coverage. Your deductible amounts are shown on your Declarations page. Deductibles "
+            "may be waived in certain circumstances — see your policy for details."
+        ),
+    },
+    {
+        "doc_id": "faq-006",
+        "source": "CustomerFAQ.pdf §2.3",
+        "text": (
+            "CAN I CHOOSE MY OWN REPAIR SHOP? Yes. You may take your vehicle to any licensed "
+            "repair shop of your choice. Using a shop in our approved network may result in "
+            "faster processing, a direct-payment arrangement between us and the shop, and a "
+            "repair warranty. Non-network shops are permitted but may require you to pay "
+            "upfront and submit receipts for reimbursement, and a cost-difference payment "
+            "rather than full reimbursement may apply."
+        ),
+    },
+    {
+        "doc_id": "faq-007",
+        "source": "CustomerFAQ.pdf §3.1",
+        "text": (
+            "WHAT HAPPENS IF MY CAR IS DECLARED A TOTAL LOSS? If the cost of repairs plus "
+            "the salvage value equals or exceeds your vehicle's actual cash value (ACV) at "
+            "the time of loss, it may be declared a total loss. We will offer you the ACV "
+            "minus your deductible. You may retain the salvage vehicle at a reduced settlement "
+            "amount. A title transfer to us will be required if you do not retain the salvage."
+        ),
+    },
+    {
+        "doc_id": "faq-008",
+        "source": "CustomerFAQ.pdf §3.2",
+        "text": (
+            "HOW IS MY VEHICLE'S VALUE DETERMINED FOR A TOTAL LOSS? Actual cash value (ACV) "
+            "is based on comparable vehicles sold in your local market, accounting for your "
+            "vehicle's year, make, model, trim level, mileage, and condition. We use "
+            "third-party valuation tools and regional market data to establish a fair value. "
+            "You may provide documentation of recent comparable sales if you believe the "
+            "valuation is inaccurate, and we will review it."
+        ),
+    },
+    {
+        "doc_id": "faq-009",
+        "source": "CustomerFAQ.pdf §4.1",
+        "text": (
+            "HOW DO I CHECK THE STATUS OF MY CLAIM? You can check your claim status 24/7 "
+            "through the customer portal at your insurer's website, by calling the claims "
+            "hotline, or by emailing your adjuster. Status milestones include: documents "
+            "received, adjuster assigned, inspection scheduled, estimate approved, payment "
+            "authorized, and claim closed. Text and email notifications are available — "
+            "opt in through the portal."
+        ),
+    },
+    {
+        "doc_id": "faq-010",
+        "source": "CustomerFAQ.pdf §4.2",
+        "text": (
+            "WHAT SHOULD I DO IMMEDIATELY AFTER AN ACCIDENT? Call emergency services if "
+            "anyone is injured. Move vehicles to a safe location if it is safe to do so. "
+            "Exchange insurance information, driver's license numbers, and contact details "
+            "with all parties involved. Take photographs of all vehicles, visible damage, "
+            "and the scene. Obtain witness contact information if possible. Notify us as "
+            "soon as possible — claims must be filed within 30 days of the date of loss."
+        ),
+    },
+]
+
+_N_FAQ_CORPUS = len(_FAQ_CORPUS)
+
+# ---------------------------------------------------------------------------
+# Qdrant lazy singletons
+# ---------------------------------------------------------------------------
+
+_qdrant_client: "QdrantClient | None" = None
+_text_embedder: "TextEmbedding | None" = None
+
+
+def _use_qdrant() -> bool:
+    return bool(os.environ.get("QDRANT_URL"))
+
+
+def _get_client() -> "QdrantClient":
+    global _qdrant_client
+    if _qdrant_client is None:
+        from qdrant_client import QdrantClient
+        _qdrant_client = QdrantClient(
+            url=os.environ["QDRANT_URL"],
+            api_key=os.environ.get("QDRANT_API_KEY"),
+        )
+    return _qdrant_client
+
+
+def _get_embedder() -> "TextEmbedding":
+    global _text_embedder
+    if _text_embedder is None:
+        from fastembed import TextEmbedding
+        _text_embedder = TextEmbedding(_EMBED_MODEL)
+    return _text_embedder
+
+
+def _qdrant_search(collection: str, data_label: str, query: str, n: int) -> list[dict]:
+    embedder = _get_embedder()
+    client = _get_client()
+
+    query_vector = list(embedder.embed([query]))[0].tolist()
+    # query_points() is the v1.12+ replacement for the removed search()
+    response = client.query_points(
+        collection_name=collection,
+        query=query_vector,
+        limit=n,
+        with_payload=True,
+    )
+    return [
+        {
+            "doc_id":     hit.payload["doc_id"],
+            "source":     hit.payload["source"],
+            "text":       hit.payload["text"],
+            "score":      round(float(hit.score), 4),
+            "data_label": data_label,
+        }
+        for hit in response.points
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Stub fallback (used when QDRANT_URL is not set — keeps unit tests fast)
+# ---------------------------------------------------------------------------
+
+def _stub_search(corpus: list[dict], data_label: str, query: str, n: int) -> list[dict]:
+    size = len(corpus)
+    n = max(1, min(n, size))
+    h = int(hashlib.sha256(query.encode()).hexdigest(), 16)
+    start = h % size
+    chunks = []
+    for i in range(n):
+        doc = corpus[(start + i) % size]
+        chunks.append({
+            "doc_id":     doc["doc_id"],
+            "source":     doc["source"],
+            "text":       doc["text"],
+            "score":      _STUB_SCORES[i % len(_STUB_SCORES)],
+            "data_label": data_label,
+        })
+    return chunks
+
 
 # ---------------------------------------------------------------------------
 # Tool: search_policy_docs — task 4.1.4
@@ -290,37 +495,18 @@ def search_policy_docs(query: str, n_results: int = 3) -> Labeled[dict]:
         Labeled[dict] with data_label=CONFIDENTIAL containing:
             query      — echoed back for traceability
             n_results  — effective count returned
-            chunks     — list of dicts, each with:
-                           doc_id      — stable chunk identifier
-                           source      — document/section reference
-                           text        — policy excerpt
-                           score       — stub relevance float [0.74, 0.93]
-                           data_label  — "CONFIDENTIAL" (per-chunk tag)
-
-    The ToolRegistry writes the tool_call_ok / tool_call_denied audit row;
-    this function writes nothing to the database.
+            chunks     — list of dicts: doc_id, source, text, score, data_label
     """
-    n = max(1, min(n_results, _N_CORPUS))
-    h = int(hashlib.sha256(query.encode()).hexdigest(), 16)
-    start = h % _N_CORPUS
-
-    chunks = []
-    for i in range(n):
-        doc = _POLICY_CORPUS[(start + i) % _N_CORPUS]
-        chunks.append({
-            "doc_id":     doc["doc_id"],
-            "source":     doc["source"],
-            "text":       doc["text"],
-            "score":      _STUB_SCORES[i % len(_STUB_SCORES)],
-            "data_label": "CONFIDENTIAL",
-        })
+    if _use_qdrant():
+        collection = os.environ.get("QDRANT_POLICY_COLLECTION", "ProjectCitadel-policy_docs")
+        n = max(1, min(n_results, _N_CORPUS))
+        chunks = _qdrant_search(collection, "CONFIDENTIAL", query, n)
+    else:
+        n = max(1, min(n_results, _N_CORPUS))
+        chunks = _stub_search(_POLICY_CORPUS, "CONFIDENTIAL", query, n)
 
     return Labeled(
-        value={
-            "query":     query,
-            "n_results": n,
-            "chunks":    chunks,
-        },
+        value={"query": query, "n_results": len(chunks), "chunks": chunks},
         label=_LABEL_CONFIDENTIAL,
     )
 
@@ -341,37 +527,52 @@ def search_fraud_rules(query: str, n_results: int = 3) -> Labeled[dict]:
         Labeled[dict] with data_label=SECRET containing:
             query      — echoed back for traceability
             n_results  — effective count returned
-            chunks     — list of dicts, each with:
-                           doc_id      — stable chunk identifier
-                           source      — document/section reference
-                           text        — fraud-rule excerpt
-                           score       — stub relevance float [0.74, 0.93]
-                           data_label  — "SECRET" (per-chunk tag)
-
-    The ToolRegistry writes the tool_call_ok / tool_call_denied audit row;
-    the step-5 dynamic-label fix (registry.py, task 4.1.3) ensures the row
-    records data_label=SECRET.  This function writes nothing to the database.
+            chunks     — list of dicts: doc_id, source, text, score, data_label
     """
-    n = max(1, min(n_results, _N_FRAUD_CORPUS))
-    h = int(hashlib.sha256(query.encode()).hexdigest(), 16)
-    start = h % _N_FRAUD_CORPUS
-
-    chunks = []
-    for i in range(n):
-        doc = _FRAUD_CORPUS[(start + i) % _N_FRAUD_CORPUS]
-        chunks.append({
-            "doc_id":     doc["doc_id"],
-            "source":     doc["source"],
-            "text":       doc["text"],
-            "score":      _STUB_SCORES[i % len(_STUB_SCORES)],
-            "data_label": "SECRET",
-        })
+    if _use_qdrant():
+        collection = os.environ.get("QDRANT_FRAUD_COLLECTION", "ProjectCitadel-fraud_rules")
+        n = max(1, min(n_results, _N_FRAUD_CORPUS))
+        chunks = _qdrant_search(collection, "SECRET", query, n)
+    else:
+        n = max(1, min(n_results, _N_FRAUD_CORPUS))
+        chunks = _stub_search(_FRAUD_CORPUS, "SECRET", query, n)
 
     return Labeled(
-        value={
-            "query":     query,
-            "n_results": n,
-            "chunks":    chunks,
-        },
+        value={"query": query, "n_results": len(chunks), "chunks": chunks},
         label=_LABEL_SECRET,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Tool: search_public_faq — task 4.2.2
+# ---------------------------------------------------------------------------
+
+
+def search_public_faq(query: str, n_results: int = 3) -> Labeled[dict]:
+    """Public RAG retriever for customer-facing FAQ documents.
+
+    Args:
+        query:     Natural-language search query.
+        n_results: Number of chunks to return (clamped to [1, corpus size]).
+
+    Returns:
+        Labeled[dict] with data_label=PUBLIC containing:
+            query      — echoed back for traceability
+            n_results  — effective count returned
+            chunks     — list of dicts: doc_id, source, text, score, data_label
+
+    NOTE: Live Qdrant path requires the API key to have rw scope for the
+    ProjectCitadel-public_faq collection (QDRANT_FAQ_COLLECTION env var).
+    """
+    if _use_qdrant():
+        collection = os.environ.get("QDRANT_FAQ_COLLECTION", "ProjectCitadel-public_faq")
+        n = max(1, min(n_results, _N_FAQ_CORPUS))
+        chunks = _qdrant_search(collection, "PUBLIC", query, n)
+    else:
+        n = max(1, min(n_results, _N_FAQ_CORPUS))
+        chunks = _stub_search(_FAQ_CORPUS, "PUBLIC", query, n)
+
+    return Labeled(
+        value={"query": query, "n_results": len(chunks), "chunks": chunks},
+        label=_LABEL_PUBLIC,
     )

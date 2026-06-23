@@ -29,7 +29,9 @@ GRANT USAGE ON SEQUENCE audit_log_log_id_seq TO role_audit_writer;
 CREATE ROLE role_orchestrator
     WITH LOGIN PASSWORD 'role_orchestrator'
     NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
-GRANT CONNECT ON DATABASE secureclaim TO role_orchestrator;
+DO $$ BEGIN
+    EXECUTE format('GRANT CONNECT ON DATABASE %I TO role_orchestrator', current_database());
+END $$;
 GRANT USAGE ON SCHEMA public TO role_orchestrator;
 GRANT role_audit_writer TO role_orchestrator;
 
@@ -56,7 +58,9 @@ GRANT SELECT, INSERT ON security_events TO role_orchestrator;
 CREATE ROLE role_intake_actor
     WITH LOGIN PASSWORD 'role_intake_actor'
     NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
-GRANT CONNECT ON DATABASE secureclaim TO role_intake_actor;
+DO $$ BEGIN
+    EXECUTE format('GRANT CONNECT ON DATABASE %I TO role_intake_actor', current_database());
+END $$;
 GRANT USAGE ON SCHEMA public TO role_intake_actor;
 GRANT role_audit_writer TO role_intake_actor;
 
@@ -76,7 +80,9 @@ GRANT INSERT ON security_events TO role_intake_actor;
 CREATE ROLE role_identity_verifier
     WITH LOGIN PASSWORD 'role_identity_verifier'
     NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
-GRANT CONNECT ON DATABASE secureclaim TO role_identity_verifier;
+DO $$ BEGIN
+    EXECUTE format('GRANT CONNECT ON DATABASE %I TO role_identity_verifier', current_database());
+END $$;
 GRANT USAGE ON SCHEMA public TO role_identity_verifier;
 GRANT role_audit_writer TO role_identity_verifier;
 
@@ -95,7 +101,9 @@ GRANT INSERT ON security_events TO role_identity_verifier;
 CREATE ROLE role_claims_processor
     WITH LOGIN PASSWORD 'role_claims_processor'
     NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
-GRANT CONNECT ON DATABASE secureclaim TO role_claims_processor;
+DO $$ BEGIN
+    EXECUTE format('GRANT CONNECT ON DATABASE %I TO role_claims_processor', current_database());
+END $$;
 GRANT USAGE ON SCHEMA public TO role_claims_processor;
 GRANT role_audit_writer TO role_claims_processor;
 
@@ -123,7 +131,9 @@ GRANT SELECT, INSERT ON security_events TO role_claims_processor;
 CREATE ROLE role_settlement_actor
     WITH LOGIN PASSWORD 'role_settlement_actor'
     NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
-GRANT CONNECT ON DATABASE secureclaim TO role_settlement_actor;
+DO $$ BEGIN
+    EXECUTE format('GRANT CONNECT ON DATABASE %I TO role_settlement_actor', current_database());
+END $$;
 GRANT USAGE ON SCHEMA public TO role_settlement_actor;
 GRANT role_audit_writer TO role_settlement_actor;
 

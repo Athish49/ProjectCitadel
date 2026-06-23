@@ -1,13 +1,17 @@
 """Unit tests for inquiry tools (Sprint 4.1.8–4.1.9).
 
-Tests cover:
-  - lookup_claim_status: pure function and ToolRegistry integration
-  - capture_complaint: pure function and ToolRegistry integration
+lookup_claim_status  — reads from claims table via ContextVar-injected conn
+capture_complaint    — INSERTs into complaints table; requires customer_id
+
+Pure tests set the ContextVar directly with mock connections.
+Registry tests verify CONFIDENTIAL-label propagation through ToolRegistry.
 """
 from __future__ import annotations
 
 import uuid
+from contextlib import contextmanager
 from datetime import date
+from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -23,106 +27,181 @@ from agent_system.tools.implementations.inquiry_tools import (
     lookup_claim_status,
 )
 from agent_system.tools.registry import ToolRegistry
+from agent_system.tools.tool_context import _conn_var
 
 pytestmark = pytest.mark.unit
+
+
+# ---------------------------------------------------------------------------
+# Seeded rows
+# ---------------------------------------------------------------------------
+
+# (claim_number, claim_stage, incident_type, incident_date, total_claim_amount)
+_CLAIM_ROW = (
+    "CLM-000001",
+    "PROCESSING",
+    "collision",
+    date(2024, 3, 15),
+    Decimal("25000.00"),
+)
+
+_CUSTOMER_ID = str(uuid.UUID("00000000-0000-0000-0000-000000000042"))
+
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
-def _make_conn(used_at=None, row_exists=True):
+def _make_mock_conn(row, execute_ok=True):
     conn = MagicMock()
     cur = MagicMock()
     cur.__enter__ = MagicMock(return_value=cur)
     cur.__exit__ = MagicMock(return_value=False)
-    cur.fetchone.return_value = (used_at,) if row_exists else None
+    cur.fetchone.return_value = row
     conn.cursor.return_value = cur
     return conn
 
 
+def _make_registry_conn_claim(row):
+    """Replay-check fetchone first, then handler fetchone."""
+    conn = MagicMock()
+    cur = MagicMock()
+    cur.__enter__ = MagicMock(return_value=cur)
+    cur.__exit__ = MagicMock(return_value=False)
+    cur.fetchone.side_effect = [(None,), row]
+    conn.cursor.return_value = cur
+    return conn
+
+
+def _make_registry_conn_complaint():
+    """Replay-check fetchone only; handler does INSERT (no fetchone)."""
+    conn = MagicMock()
+    cur = MagicMock()
+    cur.__enter__ = MagicMock(return_value=cur)
+    cur.__exit__ = MagicMock(return_value=False)
+    cur.fetchone.return_value = (None,)
+    conn.cursor.return_value = cur
+    return conn
+
+
+@contextmanager
+def _conn_ctx(row):
+    conn = _make_mock_conn(row)
+    token = _conn_var.set(conn)
+    try:
+        yield conn
+    finally:
+        _conn_var.reset(token)
+
+
+@contextmanager
+def _conn_ctx_write():
+    """Context for tools that only write (capture_complaint with customer_id)."""
+    conn = _make_mock_conn(None)
+    token = _conn_var.set(conn)
+    try:
+        yield conn
+    finally:
+        _conn_var.reset(token)
+
+
 # ---------------------------------------------------------------------------
-# Pure function tests
+# lookup_claim_status — pure tests
 # ---------------------------------------------------------------------------
 
 
 class TestLookupClaimStatusPure:
     def test_returns_labeled_dict(self):
-        result = lookup_claim_status("claim-001")
+        with _conn_ctx(_CLAIM_ROW):
+            result = lookup_claim_status("claim-001")
         assert isinstance(result, Labeled)
         assert isinstance(result.value, dict)
 
     def test_ifc_label_is_confidential(self):
-        result = lookup_claim_status("claim-label-check")
+        with _conn_ctx(_CLAIM_ROW):
+            result = lookup_claim_status("claim-label")
         assert result.label.level == DataLabel.CONFIDENTIAL
 
     def test_ifc_label_not_untrusted(self):
-        result = lookup_claim_status("claim-untrusted-check")
+        with _conn_ctx(_CLAIM_ROW):
+            result = lookup_claim_status("claim-untrusted")
         assert result.label.untrusted is False
 
     def test_required_keys_present(self):
-        result = lookup_claim_status("claim-keys")
-        expected = {"claim_id", "claim_number", "claim_stage", "incident_type",
-                    "incident_date", "total_claim_amount"}
+        with _conn_ctx(_CLAIM_ROW):
+            result = lookup_claim_status("claim-keys")
+        expected = {
+            "claim_id", "claim_number", "claim_stage",
+            "incident_type", "incident_date", "total_claim_amount",
+        }
         assert expected <= result.value.keys()
 
     def test_claim_id_echoed(self):
         cid = "claim-echo-abc123"
-        result = lookup_claim_status(cid)
+        with _conn_ctx(_CLAIM_ROW):
+            result = lookup_claim_status(cid)
         assert result.value["claim_id"] == cid
 
-    def test_claim_number_format(self):
-        result = lookup_claim_status("claim-number-fmt")
-        cn = result.value["claim_number"]
-        assert cn.startswith("CLM-")
-        assert len(cn) == 12  # "CLM-" + 8 digits
+    def test_claim_number_from_db(self):
+        with _conn_ctx(_CLAIM_ROW):
+            result = lookup_claim_status("claim-number")
+        assert result.value["claim_number"] == "CLM-000001"
 
-    def test_claim_stage_is_valid(self):
-        result = lookup_claim_status("claim-stage-valid")
-        assert result.value["claim_stage"] in _CLAIM_STAGES
+    def test_claim_number_starts_with_clm(self):
+        with _conn_ctx(_CLAIM_ROW):
+            result = lookup_claim_status("claim-clm")
+        assert result.value["claim_number"].startswith("CLM-")
 
-    def test_incident_type_is_valid(self):
-        result = lookup_claim_status("claim-incident-valid")
-        assert result.value["incident_type"] in _INCIDENT_TYPES
+    def test_claim_stage_from_db(self):
+        with _conn_ctx(_CLAIM_ROW):
+            result = lookup_claim_status("claim-stage")
+        assert result.value["claim_stage"] == "PROCESSING"
+
+    def test_incident_type_from_db(self):
+        with _conn_ctx(_CLAIM_ROW):
+            result = lookup_claim_status("claim-incident")
+        assert result.value["incident_type"] == "collision"
 
     def test_incident_date_is_iso8601(self):
-        result = lookup_claim_status("claim-date-iso")
+        with _conn_ctx(_CLAIM_ROW):
+            result = lookup_claim_status("claim-date")
         d = date.fromisoformat(result.value["incident_date"])
-        assert 2024 <= d.year <= 2025
+        assert d.year >= 2020
 
-    def test_total_claim_amount_in_range(self):
-        result = lookup_claim_status("claim-amount-range")
-        amt = result.value["total_claim_amount"]
-        assert 500.0 <= amt <= 50_000.0
+    def test_total_claim_amount_is_float(self):
+        with _conn_ctx(_CLAIM_ROW):
+            result = lookup_claim_status("claim-amount")
+        assert isinstance(result.value["total_claim_amount"], float)
+        assert result.value["total_claim_amount"] == pytest.approx(25000.0)
 
     def test_deterministic(self):
-        a = lookup_claim_status("claim-determinism")
-        b = lookup_claim_status("claim-determinism")
+        with _conn_ctx(_CLAIM_ROW):
+            a = lookup_claim_status("claim-det")
+        with _conn_ctx(_CLAIM_ROW):
+            b = lookup_claim_status("claim-det")
         assert a.value == b.value
 
-    def test_different_ids_may_differ(self):
-        stages = {lookup_claim_status(f"claim-diff-{i}").value["claim_stage"] for i in range(20)}
-        assert len(stages) > 1
+    def test_raises_when_no_row(self):
+        conn = _make_mock_conn(None)
+        token = _conn_var.set(conn)
+        try:
+            with pytest.raises(ValueError, match="No claim found"):
+                lookup_claim_status("claim-missing")
+        finally:
+            _conn_var.reset(token)
 
-    def test_all_stages_reachable(self):
-        seen: set[str] = set()
-        for i in range(500):
-            seen.add(lookup_claim_status(f"probe-stage-{i:04d}").value["claim_stage"])
-            if len(seen) == len(_CLAIM_STAGES):
-                break
-        assert seen == set(_CLAIM_STAGES), f"Missing stages: {set(_CLAIM_STAGES) - seen}"
-
-    def test_all_incident_types_reachable(self):
-        seen: set[str] = set()
-        for i in range(200):
-            seen.add(lookup_claim_status(f"probe-incident-{i:04d}").value["incident_type"])
-            if len(seen) == len(_INCIDENT_TYPES):
-                break
-        assert seen == set(_INCIDENT_TYPES), f"Missing types: {set(_INCIDENT_TYPES) - seen}"
+    def test_no_conn_context_raises_runtime_error(self):
+        cv_token = _conn_var.set(None)
+        try:
+            with pytest.raises(RuntimeError, match="No database connection"):
+                lookup_claim_status("claim-no-ctx")
+        finally:
+            _conn_var.reset(cv_token)
 
 
 # ---------------------------------------------------------------------------
-# ToolRegistry integration tests
+# lookup_claim_status — ToolRegistry integration tests
 # ---------------------------------------------------------------------------
 
 
@@ -148,10 +227,10 @@ def status_token(orchestrator_km):
     )
 
 
-def _invoke_status(registry, token, orchestrator_km, *, params=None, used_at=None, row_exists=True):
+def _invoke_status(registry, token, orchestrator_km, *, params=None, db_row=_CLAIM_ROW):
     if params is None:
         params = {"claim_id": "claim-token-001"}
-    conn = _make_conn(used_at=used_at, row_exists=row_exists)
+    conn = _make_registry_conn_claim(db_row)
     with (
         patch("agent_system.tools.registry.append_log", return_value=7) as mock_log,
         patch("agent_system.tools.registry.record_use") as mock_record,
@@ -193,71 +272,116 @@ class TestLookupClaimStatusRegistry:
         assert result.value.label.level == DataLabel.CONFIDENTIAL
 
     def test_audit_action_is_tool_call_ok(self, inquiry_registry, status_token, orchestrator_km):
-        result, mock_log, _ = _invoke_status(inquiry_registry, status_token, orchestrator_km)
+        _, mock_log, _ = _invoke_status(inquiry_registry, status_token, orchestrator_km)
         assert mock_log.call_args.kwargs["action"] == "tool_call_ok"
 
     def test_audit_params_keys_not_values(self, inquiry_registry, status_token, orchestrator_km):
-        result, mock_log, _ = _invoke_status(inquiry_registry, status_token, orchestrator_km)
+        _, mock_log, _ = _invoke_status(inquiry_registry, status_token, orchestrator_km)
         details = mock_log.call_args.kwargs["details"]
         assert "params_keys" in details
         assert "claim-token-001" not in str(details)
 
+    def test_data_from_db_row(self, inquiry_registry, status_token, orchestrator_km):
+        result, _, _ = _invoke_status(inquiry_registry, status_token, orchestrator_km)
+        inner = result.value.value
+        assert inner["claim_stage"] == "PROCESSING"
+        assert inner["incident_type"] == "collision"
+
 
 # ---------------------------------------------------------------------------
-# capture_complaint — pure function tests
+# capture_complaint — pure tests
 # ---------------------------------------------------------------------------
 
 
 class TestCaptureComplaintPure:
     def test_returns_labeled_dict(self):
-        result = capture_complaint("sess-001", "service", "Agent was rude.")
+        with _conn_ctx_write():
+            result = capture_complaint("sess-001", "service", "Agent was rude.", _CUSTOMER_ID)
         assert isinstance(result, Labeled)
         assert isinstance(result.value, dict)
 
     def test_ifc_label_is_confidential(self):
-        result = capture_complaint("sess-002", "coverage", "Claim was denied unfairly.")
+        with _conn_ctx_write():
+            result = capture_complaint("sess-002", "coverage", "Denied unfairly.", _CUSTOMER_ID)
         assert result.label.level == DataLabel.CONFIDENTIAL
 
     def test_ifc_label_not_untrusted(self):
-        result = capture_complaint("sess-003", "decision", "Wrong decision made.")
+        with _conn_ctx_write():
+            result = capture_complaint("sess-003", "decision", "Wrong decision.", _CUSTOMER_ID)
         assert result.label.untrusted is False
 
     def test_required_keys_present(self):
-        result = capture_complaint("sess-004", "process", "Process took too long.")
+        with _conn_ctx_write():
+            result = capture_complaint("sess-004", "process", "Too slow.", _CUSTOMER_ID)
         assert {"complaint_id", "session_id", "category", "status"} <= result.value.keys()
 
     def test_session_id_echoed(self):
-        result = capture_complaint("sess-echo-99", "other", "Some complaint.")
+        with _conn_ctx_write():
+            result = capture_complaint("sess-echo-99", "other", "Some complaint.", _CUSTOMER_ID)
         assert result.value["session_id"] == "sess-echo-99"
 
     def test_status_is_escalated(self):
-        result = capture_complaint("sess-005", "service", "Bad service.")
+        with _conn_ctx_write():
+            result = capture_complaint("sess-005", "service", "Bad service.", _CUSTOMER_ID)
         assert result.value["status"] == "ESCALATED"
 
     def test_category_preserved(self):
         for cat in _COMPLAINT_CATEGORIES:
-            result = capture_complaint("sess-cat", cat, "Description.")
+            with _conn_ctx_write():
+                result = capture_complaint("sess-cat", cat, "Description.", _CUSTOMER_ID)
             assert result.value["category"] == cat
 
     def test_unknown_category_coerced_to_other(self):
-        result = capture_complaint("sess-unk", "invalid_category", "Something.")
+        with _conn_ctx_write():
+            result = capture_complaint("sess-unk", "invalid_category", "Something.", _CUSTOMER_ID)
         assert result.value["category"] == "other"
 
     def test_complaint_id_is_valid_uuid(self):
-        result = capture_complaint("sess-uuid", "coverage", "My complaint.")
+        with _conn_ctx_write():
+            result = capture_complaint("sess-uuid", "coverage", "My complaint.", _CUSTOMER_ID)
         cid = result.value["complaint_id"]
         parsed = uuid.UUID(cid)
         assert str(parsed) == cid
 
     def test_deterministic(self):
-        a = capture_complaint("sess-det", "process", "Slow process.")
-        b = capture_complaint("sess-det", "process", "Slow process.")
-        assert a.value == b.value
+        """Same inputs → same complaint_id."""
+        with _conn_ctx_write():
+            a = capture_complaint("sess-det", "process", "Slow process.", _CUSTOMER_ID)
+        with _conn_ctx_write():
+            b = capture_complaint("sess-det", "process", "Slow process.", _CUSTOMER_ID)
+        assert a.value["complaint_id"] == b.value["complaint_id"]
 
     def test_different_inputs_produce_different_ids(self):
-        a = capture_complaint("sess-diff", "service", "Issue A.")
-        b = capture_complaint("sess-diff", "service", "Issue B.")
+        with _conn_ctx_write():
+            a = capture_complaint("sess-diff", "service", "Issue A.", _CUSTOMER_ID)
+        with _conn_ctx_write():
+            b = capture_complaint("sess-diff", "service", "Issue B.", _CUSTOMER_ID)
         assert a.value["complaint_id"] != b.value["complaint_id"]
+
+    def test_db_insert_called_with_customer_id(self):
+        """When customer_id provided, cursor.execute must be called."""
+        conn = _make_mock_conn(None)
+        token = _conn_var.set(conn)
+        try:
+            capture_complaint("sess-ins", "service", "Test insert.", _CUSTOMER_ID)
+        finally:
+            _conn_var.reset(token)
+        conn.cursor.return_value.execute.assert_called()
+
+    def test_no_db_insert_without_customer_id(self):
+        """When customer_id=None, no DB write occurs (backwards compat)."""
+        # No ContextVar set; function skips DB path entirely.
+        result = capture_complaint("sess-no-cust", "service", "No cust.", customer_id=None)
+        assert result.value["status"] == "ESCALATED"
+
+    def test_no_conn_context_raises_when_customer_id_given(self):
+        """With customer_id but no ContextVar → RuntimeError from get_tool_conn()."""
+        cv_token = _conn_var.set(None)
+        try:
+            with pytest.raises(RuntimeError, match="No database connection"):
+                capture_complaint("sess-no-ctx", "service", "Test.", _CUSTOMER_ID)
+        finally:
+            _conn_var.reset(cv_token)
 
 
 # ---------------------------------------------------------------------------
@@ -282,10 +406,15 @@ def complaint_token(orchestrator_km):
     )
 
 
-def _invoke_complaint(registry, token, orchestrator_km, *, params=None, used_at=None, row_exists=True):
+def _invoke_complaint(registry, token, orchestrator_km, *, params=None):
     if params is None:
-        params = {"session_id": "sess-reg-001", "category": "service", "description": "Rude agent."}
-    conn = _make_conn(used_at=used_at, row_exists=row_exists)
+        params = {
+            "session_id":   "sess-reg-001",
+            "category":     "service",
+            "description":  "Rude agent.",
+            "customer_id":  _CUSTOMER_ID,
+        }
+    conn = _make_registry_conn_complaint()
     with (
         patch("agent_system.tools.registry.append_log", return_value=11) as mock_log,
         patch("agent_system.tools.registry.record_use") as mock_record,
@@ -321,5 +450,9 @@ class TestCaptureComplaintRegistry:
         assert result.value.value["status"] == "ESCALATED"
 
     def test_audit_action_tool_call_ok(self, complaint_registry, complaint_token, orchestrator_km):
-        result, mock_log, _ = _invoke_complaint(complaint_registry, complaint_token, orchestrator_km)
+        _, mock_log, _ = _invoke_complaint(complaint_registry, complaint_token, orchestrator_km)
         assert mock_log.call_args.kwargs["action"] == "tool_call_ok"
+
+    def test_audit_data_label_confidential(self, complaint_registry, complaint_token, orchestrator_km):
+        _, mock_log, _ = _invoke_complaint(complaint_registry, complaint_token, orchestrator_km)
+        assert mock_log.call_args.kwargs["data_label"] == "CONFIDENTIAL"

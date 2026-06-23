@@ -31,14 +31,20 @@ const TABS: { id: AttackComposerTab; label: string; icon: React.FC<{ className?:
   { id: "custom",         label: "Custom",        icon: Code2         },
 ];
 
-const TARGET_FLOWS: { id: TargetFlow; label: string }[] = [
-  { id: "intake",     label: "Intake Parser" },
-  { id: "claims",     label: "Claims Processor" },
-  { id: "settlement", label: "Settlement Actor" },
+const TARGET_FLOWS: { id: TargetFlow; label: string; defaultTab: AttackComposerTab }[] = [
+  { id: "intake",     label: "Intake Parser",      defaultTab: "chat"           },
+  { id: "claims",     label: "Claims Processor",   defaultTab: "cross-customer" },
+  { id: "settlement", label: "Settlement Actor",   defaultTab: "tool"           },
 ];
 
 interface AttackComposerProps {
-  onSubmit: (payload: string, tab: AttackComposerTab, targetFlow: TargetFlow, sessionMode: SessionMode) => Promise<void>;
+  onSubmit: (
+    payload: string,
+    tab: AttackComposerTab,
+    targetFlow: TargetFlow,
+    sessionMode: SessionMode,
+    templateAttack?: { id: number; name: string },
+  ) => Promise<void>;
   isSubmitting: boolean;
   initialTemplateId?: string | null;
 }
@@ -47,8 +53,8 @@ export function AttackComposer({ onSubmit, isSubmitting, initialTemplateId }: At
   const [tab, setTab] = useState<AttackComposerTab>("chat");
   const [payload, setPayload] = useState("");
   const [targetFlow, setTargetFlow] = useState<TargetFlow>("intake");
-  const [sessionMode, setSessionMode] = useState<SessionMode>("sandboxed");
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [selectedAttack, setSelectedAttack] = useState<{ id: number; name: string } | null>(null);
 
   useEffect(() => {
     if (!initialTemplateId) return;
@@ -56,11 +62,19 @@ export function AttackComposer({ onSubmit, isSubmitting, initialTemplateId }: At
     if (!tmpl) return;
     setTab(tmpl.tab);
     setPayload(tmpl.payload);
+    setSelectedAttack({ id: tmpl.attackId, name: tmpl.attackName });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function handleTemplateSelect(t: AttackTemplate) {
     setPayload(t.payload);
+    setSelectedAttack({ id: t.attackId, name: t.attackName });
+  }
+
+  function handleTargetChange(f: typeof TARGET_FLOWS[number]) {
+    setTargetFlow(f.id);
+    setTab(f.defaultTab);
+    setSelectedAttack(null);
   }
 
   function handleSubmit() {
@@ -68,7 +82,7 @@ export function AttackComposer({ onSubmit, isSubmitting, initialTemplateId }: At
       ? uploadedFile ? `[file: ${uploadedFile.name}]` : payload
       : payload;
     if (!p.trim()) return;
-    onSubmit(p, tab, targetFlow, sessionMode);
+    onSubmit(p, tab, targetFlow, "sandboxed", selectedAttack ?? undefined);
   }
 
   const templates = templatesForTab(tab);
@@ -84,28 +98,10 @@ export function AttackComposer({ onSubmit, isSubmitting, initialTemplateId }: At
       <div className="shrink-0 border-b border-border px-4 py-3">
         <div className="flex items-center justify-between gap-4">
           <span className="font-mono text-xs font-semibold text-fg-0">Attack Composer</span>
-          <div className="flex items-center gap-2">
-            {/* session mode toggle */}
-            <button
-              type="button"
-              onClick={() => setSessionMode((m) => m === "sandboxed" ? "live" : "sandboxed")}
-              className={cn(
-                "flex items-center gap-1.5 rounded border px-2 py-1 font-mono text-[10px] transition-colors",
-                sessionMode === "sandboxed"
-                  ? "border-ok/40 bg-ok/10 text-ok"
-                  : "border-alert/40 bg-alert/10 text-alert"
-              )}
-            >
-              <span
-                className={cn(
-                  "h-1.5 w-1.5 rounded-full",
-                  sessionMode === "sandboxed" ? "bg-ok" : "bg-alert animate-pulse"
-                )}
-                aria-hidden
-              />
-              {sessionMode === "sandboxed" ? "Sandboxed" : "Live"}
-            </button>
-          </div>
+          <span className="flex items-center gap-1.5 rounded border border-ok/40 bg-ok/10 px-2 py-1 font-mono text-[10px] text-ok">
+            <span className="h-1.5 w-1.5 rounded-full bg-ok" aria-hidden />
+            Demo environment
+          </span>
         </div>
 
         {/* target flow selector */}
@@ -116,7 +112,8 @@ export function AttackComposer({ onSubmit, isSubmitting, initialTemplateId }: At
               <button
                 key={f.id}
                 type="button"
-                onClick={() => setTargetFlow(f.id)}
+                onClick={() => handleTargetChange(f)}
+                title={`Attack the ${f.label} — switches to the most relevant attack tab`}
                 className={cn(
                   "rounded px-2 py-0.5 font-mono text-[10px] transition-colors",
                   targetFlow === f.id
@@ -144,7 +141,7 @@ export function AttackComposer({ onSubmit, isSubmitting, initialTemplateId }: At
               key={t.id}
               role="tab"
               aria-selected={tab === t.id}
-              onClick={() => setTab(t.id)}
+              onClick={() => { setTab(t.id); setSelectedAttack(null); }}
               className={cn(
                 "flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2.5 font-mono text-[11px] transition-colors",
                 tab === t.id
@@ -299,12 +296,6 @@ export function AttackComposer({ onSubmit, isSubmitting, initialTemplateId }: At
           </button>
         </div>
 
-        {sessionMode === "live" && (
-          <div className="mt-2 flex items-center gap-1.5 font-mono text-[10px] text-alert">
-            <span className="h-1.5 w-1.5 rounded-full bg-alert animate-pulse" aria-hidden />
-            Live mode — attacks route to the real agent pipeline
-          </div>
-        )}
       </div>
     </div>
   );
