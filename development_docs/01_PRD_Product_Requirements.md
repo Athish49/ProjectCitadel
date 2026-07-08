@@ -185,7 +185,6 @@ Auto-insurance claims processing is chosen as the vehicle because it naturally e
 | FR7.4 | Attack-defense matrix is filterable, sortable, and links each row to evidence | P0 |
 | FR7.5 | Live audit stream shows real events as they occur, with filtering and replay | P0 |
 | FR7.6 | Autonomous adversarial agent stream shows the bot's attempts and outcomes in near real time | P0 |
-| FR7.7 | Command palette (cmd/ctrl+K) for power navigation | P1 |
 
 ### FR8: Autonomous Adversarial Agent
 
@@ -229,8 +228,7 @@ The system handles non-claim-filing interactions as a first-class flow, exercisi
 |----|-------------|--------|
 | NFR2.1 | Playground attack-to-defense-feedback latency | <2s p95 |
 | NFR2.2 | Console page load (LCP) | <1.5s |
-| NFR2.3 | Console accessibility | WCAG 2.1 AA |
-| NFR2.4 | All Console claims are backed by linked telemetry or code references | No unbacked marketing copy |
+| NFR2.3 | All Console claims are backed by linked telemetry or code references | No unbacked marketing copy |
 
 ### NFR3: Observability
 

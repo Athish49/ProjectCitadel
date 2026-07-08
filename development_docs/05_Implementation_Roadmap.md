@@ -1,8 +1,8 @@
 # SecureClaim AI — Implementation Roadmap
 
-**Version:** 2.1
-**Date:** June 14, 2026
-**Status:** Updated v2.1
+**Version:** 2.0
+**Date:** May 27, 2026
+**Status:** Final v2.0
 **Author:** Athish G R
 **Classification:** Internal
 
@@ -144,7 +144,7 @@ The Resilience Console exists, deployed publicly, with the playground operationa
 |---|------|--------|-------|
 | 3.1.1 | Next.js 15 app scaffold; shadcn/ui baseline; dark-mode design tokens | `console/` boots locally + on Vercel preview | 4 |
 | 3.1.2 | Design system: type scale, monospace blocks, code rendering (Shiki), motion primitives | Storybook of primitives | 6 |
-| 3.1.3 | Showcase API spec finalised (REST + SSE) | OpenAPI spec | 3 |
+| 3.1.3 | Showcase API spec finalised (REST + SSE + WS) | OpenAPI spec | 3 |
 | 3.1.4 | Public showcase API endpoints: matrix, patterns, architecture metadata | Endpoints return real data | 4 |
 
 ### Sprint 3.2 — Attack Playground (Week 4.5–5.5)
@@ -152,11 +152,10 @@ The Resilience Console exists, deployed publicly, with the playground operationa
 | # | Task | Output | Hours |
 |---|------|--------|-------|
 | 3.2.1 | Playground UI: split pane (attack input / defense trace) | Working chat + upload + template picker | 8 |
-| 3.2.2 | **SSE** stream of defense events from playground submission to UI (implemented as `GET /showcase/sse/playground/{trace_id}` — Server-Sent Events, not WebSocket) | Layer-by-layer trace renders in real time | 6 |
+| 3.2.2 | WebSocket stream of defense events from playground submission to UI | Layer-by-layer trace renders in real time | 6 |
 | 3.2.3 | "Defense fired" component: which pattern, which attack ID match, audit row link | Reviewer can click through to evidence | 5 |
 | 3.2.4 | Attack template library: 20+ pre-loaded attack starting points across categories | Templates load and run with one click | 4 |
 | 3.2.5 | Replay system: every session → shareable URL → loads exact trace | Replay URLs work | 5 |
-| 3.2.6 | Real 7-layer defense pipeline endpoint (`app/showcase/playground_sse.py`) — runs ingress sanitiser, pattern detection, live Claude Haiku semantic classifier, untrusted tagging, live Parser LLM, live Actor LLM, live Egress Filter for every playground submission; ephemeral `trace_store.py` bridges submit + SSE stream; no scripted scenarios; backend unavailable → graceful `stream_error` SSE event | All 7 layers run live; verdict driven by real pipeline; frontend error state on backend down | 6 |
 
 ### Sprint 3.3 — Architecture Explorer + Matrix (Week 5.5–6)
 
@@ -255,15 +254,13 @@ Every attack category in the taxonomy is either live-tested with numbers, archit
 ## 7. Phase 6 — Showcase Polish & Launch (Weeks 9–11)
 
 ### Goal
-The Console is professional, fast, accessible, and convincing. The launch package is ready.
+The Console is professional, fast, and convincing. The launch package is ready.
 
 ### Sprint 6.1 — Polish (Week 9–10)
 
 | # | Task | Output | Hours |
 |---|------|--------|-------|
-| 6.1.1 | Command palette (cmd+K) implementation | works site-wide | 5 |
 | 6.1.2 | Performance pass: LCP <1.5s, TTFB <200ms; CDN + image optimisation | Lighthouse passes | 5 |
-| 6.1.3 | Accessibility pass: WCAG 2.1 AA; keyboard nav; screen-reader pass | axe-clean | 4 |
 | 6.1.4 | Defense Pattern Library: animated diagrams per pattern (Framer Motion) | each pattern has a diagram | 6 |
 | 6.1.5 | Adversarial agent dashboard: hours-since-breach counter, attempt histogram, cost graph | dashboard live | 5 |
 | 6.1.6 | Embed mode (?embed=1) for sharing single playground sessions | works | 3 |
@@ -300,7 +297,7 @@ Phase 3 Console + playground         Phase 4 real agents + adversarial
                        ▼
 Phase 5 full attack matrix, formal spec, docs
                        ▼
-Phase 6 polish, accessibility, launch
+Phase 6 polish and launch
 ```
 
 ---

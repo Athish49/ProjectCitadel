@@ -1,8 +1,8 @@
 # SecureClaim AI — Resilience Console (Showcase Platform Spec)
 
-**Version:** 2.1
-**Date:** June 14, 2026
-**Status:** Updated v2.1
+**Version:** 2.0
+**Date:** May 27, 2026
+**Status:** Final v2.0
 **Author:** Athish G R
 **Classification:** Internal
 
@@ -52,7 +52,6 @@ It is **not** an insurance product website. It is a security engineering portfol
 | **No marketing emoji, no stock photo, no "Made with love"** | Footer: "Engineered by Athish G R. MIT-licensed. PRs welcome." That's it. |
 | **Earn trust by admitting limits** | The Residual Risk Register is one click from anywhere. Limitations are linked, not buried. |
 | **Speed signals quality** | LCP < 1.5s, TTFB < 200ms. Demonstrates the builder cares about craft. |
-| **Accessibility is a credibility signal** | WCAG 2.1 AA. Keyboard navigation everywhere. Screen-reader pass. |
 
 ---
 
@@ -154,7 +153,6 @@ Header always shows:
 - **System status dot** (green / yellow / red)
 - **Live counters:** "Attacks today: NN · Blocked: NN · Successful: 0"
 - **Build SHA** (clickable → GitHub commit)
-- **Command palette** trigger (⌘K)
 
 ### 5.2 Pages
 
@@ -271,7 +269,7 @@ VERDICT
 [Pattern: P1 — Dual-LLM Separation]
 ```
 
-Every panel is keyboard-navigable. Every reference is a real link. Every JSON is a real `JsonInspector`. The trace is a *real OpenTelemetry trace*, not a mockup.
+Every reference is a real link. Every JSON is a real `JsonInspector`. The trace is a *real OpenTelemetry trace*, not a mockup.
 
 #### 6.2.3 Below trace
 
@@ -297,7 +295,6 @@ Interactive system diagram (React Flow). The diagram from Doc 02 §1.3, but live
 
 Power features:
 - Zoom + minimap.
-- Search (cmd+K) for any node/edge name.
 - Export current view as SVG.
 
 ### 6.4 Attack-Defense Matrix (`/matrix`)
@@ -494,24 +491,7 @@ No "personal brand" copy. No "passionate about." Just the facts.
 
 ## 7. Interaction Patterns
 
-### 7.1 Command Palette (⌘K / Ctrl+K)
-
-Available on every page. Powered by `cmdk`.
-
-Commands:
-- **Navigate** to any page (typed name)
-- **Find attack** by ID or keyword
-- **Find pattern** by ID or keyword
-- **Open trace** by trace_id
-- **Open recent playground attempts**
-- **Run an attack template**
-- **Toggle dark/light**
-- **Open GitHub repo**
-- **Copy current page URL**
-
-Power-user signal: keyboard navigation is fast and complete.
-
-### 7.2 URL state encoding
+### 7.1 URL state encoding
 
 Every interaction encodes state in the URL:
 - `/playground?template=indirect-pdf-3` loads the playground with a specific template ready
@@ -521,14 +501,14 @@ Every interaction encodes state in the URL:
 
 Reviewers can share specific findings. The builder can demo specific scenarios with a single URL.
 
-### 7.3 Sharing & embeds
+### 7.2 Sharing & embeds
 
 - Every page has a `Share` button → copies URL with current state
 - Playground sessions get permanent replay URLs
 - `?embed=1` strips header/footer/nav for iframe embedding (useful for the GitHub README or a LinkedIn post)
 - OG images dynamically generated for shared playground URLs ("Attack #29 · Blocked at Layer 5 — see the trace")
 
-### 7.4 Notifications
+### 7.3 Notifications
 
 Subtle toast for:
 - "New attack tried (open trace)"
@@ -537,7 +517,7 @@ Subtle toast for:
 
 Toasts auto-dismiss; click to expand to full event.
 
-### 7.5 Comparison mode
+### 7.4 Comparison mode
 
 On playground and matrix detail pages, a "Compare" toggle runs the same payload against a baseline configuration (no P1, no P10) and shows side-by-side traces. **This is the single most persuasive interaction on the site** — the reviewer sees the architecture's contribution made concrete.
 
@@ -549,14 +529,13 @@ On playground and matrix detail pages, a "Compare" toggle runs the same payload 
 
 ```
 Agent system (API) ──── REST ────→  Console (SSR / RSC)
-                  ──── SSE  ────→  Live streams (audit, adversarial, playground defense trace)
+                  ──── SSE  ────→  Live streams (audit, adversarial)
+                  ──── WS   ────→  Playground bidirectional
 
 CI runs ──── webhook ──→ matrix-data updater
 Adversarial agent ──── stdout ──→ adversarial-stream
 OTel traces ──── Tempo ──→ replay viewer
 ```
-
-All real-time Console data is delivered via Server-Sent Events. WebSocket is **not** used.
 
 ### 8.2 SSE channels
 
@@ -582,7 +561,7 @@ All real-time Console data is delivered via Server-Sent Events. WebSocket is **n
 
 ---
 
-## 9. Performance & Accessibility
+## 9. Performance
 
 ### 9.1 Performance targets
 
@@ -598,16 +577,7 @@ All real-time Console data is delivered via Server-Sent Events. WebSocket is **n
 
 Measured via Vercel Analytics; surfaced as a badge on the About page ("This site's own performance is part of the credibility signal").
 
-### 9.2 Accessibility
-
-- WCAG 2.1 AA
-- Full keyboard navigation; focus rings visible (custom, not default)
-- Screen-reader pass on all interactive components
-- Colour contrast ≥4.5:1 for body, ≥3:1 for large text
-- `prefers-reduced-motion` respected (motion replaced with instant transitions)
-- All charts have data-table equivalents toggleable
-
-### 9.3 Cross-platform
+### 9.2 Cross-platform
 
 - Desktop: primary target
 - Tablet: full functionality
@@ -622,7 +592,7 @@ Measured via Vercel Analytics; surfaced as a badge on the About page ("This site
 | Framework | Next.js 15 (App Router, RSC) | |
 | Styling | Tailwind v4 + custom design tokens | shadcn/ui scaffolded; components hand-tuned |
 | State | React `useState` / `useEffect` | TanStack Query deferred to Phase 6 |
-| Live data | EventSource (SSE) via `use-playground-stream` and `use-adversarial-stream` hooks | All live channels use SSE; WebSocket not used |
+| Live data | EventSource (SSE) custom hooks | WebSocket scaffolded; SSE used in practice |
 | Diagrams | React Flow (@xyflow/react v12) | |
 | Markdown | react-markdown + remark-gfm | `/docs` viewer |
 | Code rendering | Shiki | Python, TypeScript, SQL, TLA+ (via plaintext) |
@@ -659,13 +629,10 @@ console/
 │   ├── matrix/
 │   └── live/                     # SSE consumers
 ├── lib/
-│   ├── hooks/
-│   │   ├── use-playground-stream.ts   # playground SSE consumer + layer state machine
-│   │   └── use-adversarial-stream.ts  # adversarial feed SSE consumer
-│   ├── types/
-│   │   ├── playground.ts              # TraceLayer, TraceVerdict, LAYER_DEFINITIONS (P1–P10)
-│   │   └── showcase.ts                # shared showcase types (PatternId, etc.)
-│   └── utils.ts                       # cn() and shared utilities
+│   ├── api.ts                    # API client
+│   ├── sse.ts                    # SSE hooks
+│   ├── ws.ts                     # WebSocket helpers
+│   └── trust.ts                  # label rendering
 ├── public/
 └── tests/
     ├── unit/
@@ -705,9 +672,7 @@ Backend has matching `prod` and `sandbox` instances; the adversarial agent attac
 - [ ] Audit chain integrity verifies clean
 - [ ] Formal spec page renders TLA+ + conformance status
 - [ ] Residual risk register has ≥10 honest entries
-- [ ] Command palette covers all primary actions
-- [ ] Lighthouse: Performance ≥95, Accessibility ≥100, Best Practices ≥100, SEO ≥95
-- [ ] axe-core: zero violations on all pages
+- [ ] Lighthouse: Performance ≥95, Best Practices ≥100, SEO ≥95
 - [ ] Sentry: zero unresolved errors
 - [ ] OG images render for share URLs
 - [ ] README links to live Console with one-paragraph "what to try first"
@@ -745,7 +710,7 @@ The Console signals seriousness through restraint.
 | Replay shares | distinct replay URL shares | meaningful organic share count |
 | GitHub stars from Console traffic | UTM-tagged repo visits → stars | qualitative |
 | Adversarial-agent breach disclosure | breaches handled transparently (issue → fix → audit) | 100% if any |
-| Lighthouse score on Home | monthly | ≥95 Performance, 100 Accessibility |
+| Lighthouse score on Home | monthly | ≥95 Performance, ≥95 SEO |
 | Reviewer feedback (qualitative) | direct outreach + LinkedIn responses | "this is impressive" or stronger |
 
 ---
