@@ -1,0 +1,208 @@
+@import "tailwindcss";
+@plugin "tailwindcss-animate";
+
+/* ── Design tokens — derived from design-file-overview HTML prototypes ──────── */
+:root {
+  /* Background scale */
+  --bg-base:    #0A0B0C;   /* primary page bg */
+  --bg-surface: #0B0C0E;   /* section/card bg */
+  --bg-card:    #0C0D0F;   /* elevated cards */
+  --bg-deep:    #08090A;   /* sidebar, deepest bg */
+
+  /* Nav overlay */
+  --bg-nav: rgba(10,11,12,0.82);
+
+  /* Foreground — white at opacity (no separate color vars, use opacity utilities) */
+  --fg-100: rgba(255,255,255,0.97);  /* hero headings */
+  --fg-95:  rgba(255,255,255,0.95);  /* primary text, nav links */
+  --fg-85:  rgba(255,255,255,0.85);  /* secondary text */
+  --fg-70:  rgba(255,255,255,0.70);  /* body/muted */
+  --fg-45:  rgba(255,255,255,0.45);  /* labels, breadcrumbs */
+  --fg-35:  rgba(255,255,255,0.35);  /* very muted */
+
+  /* Border — white at opacity */
+  --border-subtle:  rgba(255,255,255,0.07);  /* most borders */
+  --border-dim:     rgba(255,255,255,0.09);  /* section dividers */
+  --border-medium:  rgba(255,255,255,0.14);  /* active / highlighted */
+
+  /* Signal palette — from design HTML */
+  --ok:     #3ECF8E;   /* green / success (most used signal color) */
+  --warn:   #E2A336;   /* amber / warning */
+  --alert:  #E5484D;   /* red / danger */
+  --attack: #8A6FA8;   /* purple / attack */
+  --teal:   #5FA8A0;   /* teal / trust */
+  --blue:   #5B8DEF;   /* blue / info */
+}
+
+/* ── Tailwind v4 theme registration ────────────────────────────────────────── */
+@theme inline {
+  --color-bg-base:    var(--bg-base);
+  --color-bg-surface: var(--bg-surface);
+  --color-bg-card:    var(--bg-card);
+  --color-bg-deep:    var(--bg-deep);
+
+  --color-ok:     var(--ok);
+  --color-warn:   var(--warn);
+  --color-alert:  var(--alert);
+  --color-attack: var(--attack);
+  --color-teal:   var(--teal);
+  --color-blue:   var(--blue);
+
+  /* Typography */
+  --font-sans: var(--font-geist);
+  --font-mono: var(--font-geist-mono);
+}
+
+/* ── Base styles ────────────────────────────────────────────────────────────── */
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background: var(--bg-base);
+  color: var(--fg-95);
+  font-family: var(--font-sans), 'Helvetica Neue', sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+a {
+  color: var(--fg-70);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--fg-95);
+}
+
+::selection {
+  background: rgba(255,255,255,0.18);
+}
+
+/* ── Responsive ────────────────────────────────────────────────────────────── */
+@media (max-width: 1120px) {
+  .nav-links { display: none !important; }
+  [data-pg-grid]      { grid-template-columns: 1fr !important; }
+  [data-adv-grid]     { grid-template-columns: 1fr !important; }
+  [data-main-grid]    { grid-template-columns: 1fr !important; }
+  [data-agents-grid]  { grid-template-columns: repeat(2, 1fr) !important; }
+  [data-patterns-grid]{ grid-template-columns: repeat(2, 1fr) !important; }
+  [data-two-col]      { grid-template-columns: 1fr !important; }
+  [data-three-col]    { grid-template-columns: 1fr !important; }
+}
+@media (max-width: 980px) {
+  [data-app-grid]    { grid-template-columns: 1fr !important; grid-auto-rows: min-content; overflow-y: auto !important; }
+  [data-trace-panel] { height: 420px !important; }
+  [data-chat-panel]  { height: 460px !important; }
+  [data-sidebar]     { display: none !important; }
+  [data-main]        { margin-left: 0 !important; }
+  [data-matrix-scroll]{ overflow-x: auto !important; }
+}
+@media (max-width: 900px) {
+  [data-hero-stats]   { grid-template-columns: repeat(2, 1fr) !important; }
+  [data-mstats-grid]  { grid-template-columns: 1fr !important; }
+  [data-filter-bar]   { flex-wrap: wrap !important; }
+  [data-row-grid]     { grid-template-columns: 44px 1fr 90px 78px !important; }
+  [data-col-patterns],[data-col-tried],[data-col-partial],[data-col-lastrun] { display: none !important; }
+  [data-feed-row]     { grid-template-columns: 60px 1fr 74px !important; }
+  [data-feed-surface],[data-feed-duration],[data-feed-catshort] { display: none !important; }
+  [data-pattern-explorer] { grid-template-columns: 1fr !important; }
+  [data-pattern-list] { position: static !important; flex-direction: row !important; flex-wrap: wrap !important; }
+  [data-impl-grid]    { grid-template-columns: 1fr !important; }
+}
+@media (max-width: 620px) {
+  [data-patterns-grid], [data-agents-grid] { grid-template-columns: 1fr !important; }
+}
+
+/* ── Hover utilities ─────────────────────────────────────────────────────────
+   CSS classes for recurring hover patterns — avoids onMouseEnter/Leave noise */
+
+/* Primary button: near-white → pure white bg */
+.btn-primary {
+  background: rgba(255,255,255,0.95);
+  color: #0A0B0C;
+  transition: background 0.15s;
+}
+.btn-primary:hover { background: rgba(255,255,255,0.95); color: #0A0B0C; box-shadow: 0 0 0 2px rgba(255,255,255,0.85); }
+
+/* Outline button: faint border → brighter border + text */
+.btn-outline {
+  border: 1px solid rgba(255,255,255,0.16);
+  color: rgba(255,255,255,0.85);
+  transition: border-color 0.15s, color 0.15s;
+}
+.btn-outline:hover { border-color: rgba(255,255,255,0.4); color: rgba(255,255,255,1); }
+
+/* Ghost button: transparent bg, border that brightens */
+.btn-ghost {
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.18);
+  color: rgba(255,255,255,0.85);
+  transition: border-color 0.15s, color 0.15s;
+}
+.btn-ghost:hover { border-color: rgba(255,255,255,0.45); color: #ffffff; }
+
+/* Link: dim → bright */
+.link-dim {
+  color: rgba(255,255,255,0.65);
+  transition: color 0.15s;
+}
+.link-dim:hover { color: rgba(255,255,255,0.95); }
+
+/* Formal sidebar nav link */
+.formal-nav-link {
+  display: block;
+  padding: 8px 10px;
+  font-size: 13px;
+  color: rgba(255,255,255,0.55);
+  border-radius: 5px;
+  transition: background 0.15s, color 0.15s;
+}
+.formal-nav-link:hover {
+  background: rgba(255,255,255,0.04);
+  color: rgba(255,255,255,0.95);
+}
+
+/* Card bg lighten on hover */
+.card-hover { transition: background 0.15s; }
+.card-hover:hover { background: #101214 !important; }
+
+/* Matrix table row hover */
+.matrix-row:hover { background: rgba(255,255,255,0.022) !important; }
+
+/* Pattern list card hover */
+.pattern-card:hover { border-color: rgba(255,255,255,0.22) !important; }
+
+/* Pattern defeat chip hover */
+.defeat-chip:hover { border-color: rgba(62,207,142,0.5) !important; color: #ffffff !important; }
+
+/* ── Keyframes ──────────────────────────────────────────────────────────────── */
+@keyframes citadel-pulse {
+  0%   { opacity: 0.4; }
+  50%  { opacity: 1; }
+  100% { opacity: 0.4; }
+}
+
+@keyframes citadel-scan {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+
+@keyframes citadel-rowin {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes citadel-flow {
+  0%   { offset-distance: 0%;   opacity: 0; }
+  6%   {                         opacity: 1; }
+  90%  {                         opacity: 1; }
+  100% { offset-distance: 100%; opacity: 0; }
+}
