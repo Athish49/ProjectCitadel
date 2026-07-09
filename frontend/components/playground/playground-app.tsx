@@ -9,9 +9,10 @@ import {
   PG_LAYER_DEFS,
   makeTemplates,
   type Persona,
-  type LayerKind,
   type TemplateSpec,
 } from "@/lib/data/playground";
+import { usePlaygroundStream } from "@/lib/hooks/use-playground-stream";
+import type { AttackComposerTab } from "@/lib/types/playground";
 
 interface Message {
   who: string;
@@ -23,30 +24,6 @@ interface Message {
   time: string;
 }
 
-interface LayerState {
-  detail: string;
-  kind: LayerKind;
-}
-
-interface AuditRow {
-  tag: string;
-  color: string;
-  elapsed: string;
-}
-
-interface Verdict {
-  label: "BLOCKED" | "ALLOWED";
-  detail: string;
-  audits: string;
-}
-
-interface RunSpec {
-  blockAt: number;
-  details: [string, LayerKind][];
-  agentReply: string;
-  verdictDetail: string;
-}
-
 const PERSONA: Persona = PERSONAS[0];
 
 export function PlaygroundApp() {
@@ -55,20 +32,18 @@ export function PlaygroundApp() {
   const first = p.name.split(" ")[0];
   const pathname = usePathname();
 
+  const { trace, isStreaming, error, submit } = usePlaygroundStream();
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
-  const [running, setRunning] = useState(false);
   const [thinking, setThinking] = useState(false);
-  const [layerStates, setLayerStates] = useState<LayerState[]>([]);
-  const [verdict, setVerdict] = useState<Verdict | null>(null);
-  const [traceId, setTraceId] = useState("—");
-  const [auditRows, setAuditRows] = useState<AuditRow[]>([]);
   const [copied, setCopied] = useState(false);
   const [activeCategory, setActiveCategory] = useState<"text" | "pdf" | "image">("text");
 
-  const traceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const thinkTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const thinkTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Track which verdicts have been surfaced as agent replies to avoid duplicates
+  const verdictKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     setMessages([{
@@ -76,13 +51,10 @@ export function PlaygroundApp() {
       from: "agent",
       isText: true,
       isFile: false,
-      text: `Hi ${first}, I can help file a new claim or answer questions about ${p.claim}. What’s going on?`,
+      text: `Hi ${first}, I can help file a new claim or answer questions about ${p.claim}. What's going on?`,
       time: "now",
     }]);
-    return () => {
-      if (traceTimer.current) clearTimeout(traceTimer.current);
-      if (thinkTimer.current) clearTimeout(thinkTimer.current);
-    };
+    return () => { if (thinkTimer.current) clearTimeout(thinkTimer.current); };
   }, []);
 
   useEffect(() => {
@@ -91,240 +63,85 @@ export function PlaygroundApp() {
     }
   }, [messages, thinking]);
 
-  function pushMessage(msg: Omit<Message, "time">) {
-    setMessages((prev) => [...prev, { ...msg, time: "now" }]);
-  }
-
-  function run(userBubble: Omit<Message, "time">, spec: RunSpec) {
-    if (running) return;
-    if (traceTimer.current) clearTimeout(traceTimer.current);
+  // When a verdict arrives, add the agent reply to the chat
+  useEffect(() => {
+    if (!trace?.verdict || !trace?.traceId) return;
+    const key = `${trace.traceId}:${trace.verdict.outcome}`;
+    if (verdictKeyRef.current === key) return;
+    verdictKeyRef.current = key;
     if (thinkTimer.current) clearTimeout(thinkTimer.current);
+    setThinking(true);
+    thinkTimer.current = setTimeout(() => {
+      setThinking(false);
+      setMessages((prev) => [...prev, {
+        who: "Assistant",
+        from: "agent",
+        isText: true,
+        isFile: false,
+        text: trace.verdict!.summary,
+        time: "now",
+      }]);
+    }, 650);
+  }, [trace?.verdict, trace?.traceId]);
 
-    const newTraceId = "tr_" + Math.random().toString(36).slice(2, 10);
-    pushMessage(userBubble);
-    setRunning(true);
+  function pushUserMessage(msg: Omit<Message, "time">) {
+    setMessages((prev) => [...prev, { ...msg, time: "now" }]);
+    verdictKeyRef.current = null; // allow next verdict
+    if (thinkTimer.current) clearTimeout(thinkTimer.current);
     setThinking(false);
-    setLayerStates([]);
-    setVerdict(null);
-    setTraceId(newTraceId);
-    setAuditRows([]);
-    setDraft("");
-
-    const t0 = Date.now();
-    const tagMap: Record<LayerKind, [string, string]> = {
-      pass: ["layer_pass", "#3ECF8E"],
-      detect: ["pattern_detected", "#E2A336"],
-      block: ["defense_fired", "#E5484D"],
-    };
-
-    const step = (i: number) => {
-      const stopAt = spec.blockAt > 0 ? spec.blockAt : 7;
-      if (i >= stopAt) {
-        const vd: Verdict = {
-          label: spec.blockAt > 0 ? "BLOCKED" : "ALLOWED",
-          detail: spec.verdictDetail,
-          audits: `${spec.details.length + (spec.blockAt > 0 ? 1 : 2)} audit rows written, chain intact`,
-        };
-        setRunning(false);
-        setVerdict(vd);
-        setThinking(true);
-        thinkTimer.current = setTimeout(() => {
-          setThinking(false);
-          pushMessage({ who: "Assistant", from: "agent", isText: true, isFile: false, text: spec.agentReply });
-        }, 650);
-        return;
-      }
-      const [detail, kind] = spec.details[i];
-      const elapsed = ((Date.now() - t0) / 1000).toFixed(2) + "s";
-      const [tag, color] = tagMap[kind];
-      setLayerStates((prev) => [...prev, { detail, kind }]);
-      setAuditRows((prev) => [...prev, { tag, color, elapsed }]);
-      traceTimer.current = setTimeout(() => step(i + 1), 480);
-    };
-    step(0);
-  }
-
-  function runTemplate(spec: TemplateSpec) {
-    const bubble: Omit<Message, "time"> =
-      spec.kind === "text"
-        ? { who: p.name, from: "user", isText: true, isFile: false, text: spec.userText }
-        : { who: p.name, from: "user", isText: false, isFile: true, fileName: spec.fileName };
-    run(bubble, spec);
-  }
-
-  function classifyFreeText(text: string): RunSpec {
-    const low = text.toLowerCase();
-    if (/ignore (all|prior|previous)|you are now|act as|system:|bypass/.test(low)) {
-      return {
-        blockAt: 3,
-        details: [
-          ["NFKC normalised, scanning for zero-width chars", "pass"],
-          ["pattern match: instruction_override", "detect"],
-          ["semantic classifier - adversarial confidence 0.9 or higher", "block"],
-        ],
-        agentReply: "I can't action that - it reads like an attempt to override my instructions. Happy to help with your actual claim.",
-        verdictDetail: "BLOCKED - Layer 3 semantic_classifier",
-      };
-    }
-    if (/score_fraud|fraud score|risk score|risk factors/.test(low)) {
-      return {
-        blockAt: 6,
-        details: [
-          ["NFKC normalised, 0 zero-width chars stripped", "pass"],
-          ["pattern match: privileged_tool_request", "detect"],
-          ["adversarial score 0.5, below threshold - logged as signal only", "pass"],
-          ["wrapped in untrusted-content delimiters", "pass"],
-          ["parsed to tool_request schema - OK", "pass"],
-          ["no capability token for that tool and agent pair - denied", "block"],
-        ],
-        agentReply: "Fraud model internals are never surfaced to a session - I can't share those.",
-        verdictDetail: "BLOCKED - Layer 6 capability_token_denied",
-      };
-    }
-    if (/CLM-\d+/.test(text.toUpperCase()) && !text.includes(p.claim)) {
-      return {
-        blockAt: 6,
-        details: [
-          ["NFKC normalised, 0 zero-width chars stripped", "pass"],
-          ["0 static pattern matches", "pass"],
-          ["adversarial score 0.3, below threshold - logged as signal only", "pass"],
-          ["wrapped in untrusted-content delimiters", "pass"],
-          ["valid claim_status intent, schema OK", "pass"],
-          ["claim not owned by this session - 0 rows returned", "block"],
-        ],
-        agentReply: `I can only access ${p.claim} from this session - no visibility into other claims.`,
-        verdictDetail: "BLOCKED - Layer 6 scoped_access_denial",
-      };
-    }
-    if (/https?:\/\//.test(low)) {
-      return {
-        blockAt: 7,
-        details: [
-          ["NFKC normalised, 0 zero-width chars stripped", "pass"],
-          ["0 static pattern matches", "pass"],
-          ["adversarial score 0.35, below threshold - logged as signal only", "pass"],
-          ["wrapped in untrusted-content delimiters", "pass"],
-          ["valid intent, schema OK", "pass"],
-          ["tool call scoped to own claim - OK", "pass"],
-          ["URL not on allowlist, link removed before send", "block"],
-        ],
-        agentReply: "Noted - I stripped a link from my reply that was not on the approved domain list.",
-        verdictDetail: "BLOCKED - Layer 7 egress_url_strip",
-      };
-    }
-    return {
-      blockAt: 0,
-      details: [
-        ["NFKC normalised, 0 zero-width chars stripped", "pass"],
-        ["0 static pattern matches", "pass"],
-        ["adversarial score 0.05, below threshold - clean", "pass"],
-        ["wrapped in untrusted-content delimiters", "pass"],
-        ["parsed cleanly, intent classified, schema OK", "pass"],
-        ["tool calls scoped to own claim - OK", "pass"],
-        ["no SECRET data, no PII, no external URLs - clear", "pass"],
-      ],
-      agentReply: `Thanks, ${first} - noted on ${p.claim}. Anything else I can help with?`,
-      verdictDetail: "ALLOWED - all 7 layers clear",
-    };
-  }
-
-  function classifyFile(file: File): RunSpec {
-    const name = file.name.toLowerCase();
-    const isImage = /\.(jpg|jpeg|png|gif|webp)$/.test(name) || file.type.startsWith("image/");
-    const suspicious = /hidden|inject|overlay|sticker|malicious|exploit/.test(name);
-
-    if (isImage) {
-      if (suspicious) {
-        return {
-          blockAt: 5,
-          details: [
-            ["EXIF and XMP stripped, re-encoded — OCR located 1 text region, pixel-blurred to opaque block before the vision model looked", "pass"],
-            ["0 static pattern matches on visible content", "pass"],
-            ["adversarial score 0.4, below threshold — logged as signal only", "pass"],
-            ["OCR text routed as separate untrusted stream, wrapped in delimiters", "pass"],
-            ["OCR stream parsed — instruction_override_attempt anomaly — parser_schema_violation", "block"],
-          ],
-          agentReply: "I redacted an overlay on that image before anything could read it, and the extracted text didn't parse as legitimate evidence, so I've quarantined it.",
-          verdictDetail: "BLOCKED — Layer 5 parser_schema_violation (image redacted successfully)",
-        };
-      }
-      return {
-        blockAt: 0,
-        details: [
-          ["EXIF and XMP stripped, re-encoded — OCR found 0 text regions", "pass"],
-          ["0 static pattern matches on visible content", "pass"],
-          ["adversarial score 0.05, below threshold — clean", "pass"],
-          ["no OCR stream to parse — image-only", "pass"],
-          ["damage-observation schema — OK", "pass"],
-          [`attached to claim ${p.claim} as evidence — OK`, "pass"],
-          ["no SECRET data, no PII, no external URLs — clear", "pass"],
-        ],
-        agentReply: `Got the photo — attached to ${p.claim}.`,
-        verdictDetail: "ALLOWED — all 7 layers clear",
-      };
-    }
-
-    if (suspicious) {
-      return {
-        blockAt: 1,
-        details: [
-          ["sandboxed parse (no network, read-only filesystem) — hidden-content scan found suspicious embedded content, rejected before parsing", "block"],
-        ],
-        agentReply: "That file got rejected before it was even parsed — hidden content was detected. Can you re-export it as a clean document?",
-        verdictDetail: "BLOCKED — Layer 1 sandboxed_pdf_reject",
-      };
-    }
-    return {
-      blockAt: 0,
-      details: [
-        ["sandboxed parse (no network, read-only filesystem) — no JavaScript, no hidden layers, no active forms", "pass"],
-        ["0 static pattern matches on extracted text", "pass"],
-        ["adversarial score 0.04, below threshold — clean", "pass"],
-        ["wrapped in untrusted-content delimiters", "pass"],
-        ["parsed to document-fields schema — OK", "pass"],
-        [`fields merged into claim ${p.claim} — OK`, "pass"],
-        ["no SECRET data, no PII beyond policy scope, no external URLs — clear", "pass"],
-      ],
-      agentReply: `Thanks — that file parsed cleanly and is attached to ${p.claim}.`,
-      verdictDetail: "ALLOWED — all 7 layers clear",
-    };
   }
 
   function sendDraft() {
     const text = draft.trim();
-    if (!text || running) return;
-    run({ who: p.name, from: "user", isText: true, isFile: false, text }, classifyFreeText(text));
+    if (!text || isStreaming) return;
+    pushUserMessage({ who: p.name, from: "user", isText: true, isFile: false, text });
+    setDraft("");
+    submit(text, "chat", "intake", "live");
+  }
+
+  function runTemplate(spec: TemplateSpec) {
+    if (isStreaming) return;
+    const bubble: Omit<Message, "time"> =
+      spec.kind === "text"
+        ? { who: p.name, from: "user", isText: true, isFile: false, text: spec.userText }
+        : { who: p.name, from: "user", isText: false, isFile: true, fileName: spec.fileName };
+    pushUserMessage(bubble);
+    const tab: AttackComposerTab = spec.kind === "text" ? "chat" : spec.kind;
+    const payload = spec.kind === "text" ? spec.userText : (spec.userText || spec.fileName || "file");
+    submit(payload, tab, "intake", "live");
   }
 
   function onFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = "";
-    if (!file || running) return;
-    run({ who: p.name, from: "user", isText: false, isFile: true, fileName: file.name }, classifyFile(file));
+    if (!file || isStreaming) return;
+    const tab: AttackComposerTab = file.type.startsWith("image/") ? "image" : "pdf";
+    pushUserMessage({ who: p.name, from: "user", isText: false, isFile: true, fileName: file.name });
+    submit(file.name, tab, "intake", "live");
   }
 
   function newSession() {
-    if (traceTimer.current) clearTimeout(traceTimer.current);
     if (thinkTimer.current) clearTimeout(thinkTimer.current);
+    verdictKeyRef.current = null;
     setMessages([{
       who: "Assistant",
       from: "agent",
       isText: true,
       isFile: false,
-      text: `Hi ${first}, I can help file a new claim or answer questions about ${p.claim}. What’s going on?`,
+      text: `Hi ${first}, I can help file a new claim or answer questions about ${p.claim}. What's going on?`,
       time: "now",
     }]);
     setDraft("");
-    setRunning(false);
     setThinking(false);
-    setLayerStates([]);
-    setVerdict(null);
-    setTraceId("—");
-    setAuditRows([]);
     setCopied(false);
   }
 
-  // Derived
+  // ── Derived display state ────────────────────────────────────────────────────
+
+  const traceId    = trace?.traceId ?? "—";
+  const verdict    = trace?.verdict ?? null;
+  const running    = isStreaming;
+
   const categories = [
     { key: "text" as const, label: "Text" },
     { key: "pdf" as const, label: "Documents" },
@@ -334,30 +151,67 @@ export function PlaygroundApp() {
   const sendDisabled = running || !draft.trim();
 
   const sessionStatusColor = running ? "#3ECF8E" : "rgba(255,255,255,0.35)";
-  const traceStatusColor = running ? "#3ECF8E" : verdict ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.35)";
-  const verdictColor = verdict ? (verdict.label === "BLOCKED" ? "#E5484D" : "#3ECF8E") : "rgba(255,255,255,0.35)";
-  const verdictBg = verdict ? (verdict.label === "BLOCKED" ? "rgba(229,72,77,0.08)" : "rgba(62,207,142,0.06)") : "transparent";
+  const traceStatusColor   = running ? "#3ECF8E" : verdict ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.35)";
+  const verdictColor       = verdict
+    ? verdict.outcome === "BLOCKED" ? "#E5484D"
+      : verdict.outcome === "BREACH" ? "#E5484D"
+      : "#3ECF8E"
+    : "rgba(255,255,255,0.35)";
+  const verdictBg = verdict
+    ? (verdict.outcome === "BLOCKED" || verdict.outcome === "BREACH")
+      ? "rgba(229,72,77,0.08)"
+      : "rgba(62,207,142,0.06)"
+    : "transparent";
+  const verdictLabel = verdict
+    ? verdict.outcome === "CLEAN" ? "ALLOWED"
+      : verdict.outcome === "PARTIAL" ? "PARTIAL"
+      : verdict.outcome
+    : "";
 
+  // Map real trace layers → display format
   const layers = PG_LAYER_DEFS.map(([num, name, patterns], i) => {
-    const ls = layerStates[i];
-    const done = !!ls;
-    const skipped = !!(verdict && !done);
+    const rl = trace?.layers[i];
     let status = "-";
     let statusColor = "rgba(255,255,255,0.25)";
     let detail = `pattern ${patterns}`;
-    if (done) {
-      detail = ls.detail;
-      if (ls.kind === "pass") { status = "PASS"; statusColor = "rgba(255,255,255,0.55)"; }
-      else if (ls.kind === "detect") { status = "DETECTED"; statusColor = "#E2A336"; }
-      else { status = "BLOCKED"; statusColor = "#E5484D"; }
-    } else if (skipped) {
-      status = "NOT REACHED"; statusColor = "rgba(255,255,255,0.22)"; detail = "-";
-    } else if (running && i === layerStates.length) {
-      status = "RUNNING"; statusColor = "#3ECF8E";
+
+    if (rl) {
+      if (rl.status === "passed") {
+        status = "PASS"; statusColor = "rgba(255,255,255,0.55)";
+        detail = rl.events[0]?.message ?? (rl.durationMs != null ? `${rl.durationMs}ms` : "passed");
+      } else if (rl.status === "blocked") {
+        status = "BLOCKED"; statusColor = "#E5484D";
+        detail = rl.events[0]?.message ?? "blocked";
+      } else if (rl.status === "partial") {
+        status = "DETECTED"; statusColor = "#E2A336";
+        detail = rl.events[0]?.message ?? "detected";
+      } else if (rl.status === "running") {
+        status = "RUNNING"; statusColor = "#3ECF8E";
+      } else if (rl.status === "pending" && verdict) {
+        status = "NOT REACHED"; statusColor = "rgba(255,255,255,0.22)"; detail = "-";
+      }
     }
-    const opacity = done || skipped || running ? 1 : 0.5;
+
+    const opacity = rl && rl.status !== "pending" ? 1 : 0.5;
     return { num, name, detail, status, statusColor, opacity };
   });
+
+  // Derive audit rows from completed layers
+  const auditRows = (trace?.layers ?? [])
+    .filter((l) => l.status !== "pending" && l.status !== "running")
+    .map((l) => ({
+      tag: l.status === "blocked" ? "defense_fired"
+        : l.status === "partial" ? "pattern_detected"
+        : "layer_pass",
+      color: l.status === "blocked" ? "#E5484D"
+        : l.status === "partial" ? "#E2A336"
+        : "#3ECF8E",
+      elapsed: l.durationMs != null ? `${(l.durationMs / 1000).toFixed(2)}s` : "—",
+    }));
+
+  const verdictAudits = auditRows.length > 0
+    ? `${auditRows.length} audit rows written, chain intact`
+    : "";
 
   return (
     <div style={{ height: "100vh", width: "100%", background: "#0A0B0C", display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -394,6 +248,13 @@ export function PlaygroundApp() {
       </nav>
 
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, minWidth: 0, overflow: "hidden" }}>
+
+        {/* Error banner */}
+        {error && (
+          <div style={{ flexShrink: 0, padding: "8px 32px", borderBottom: "1px solid rgba(229,72,77,0.4)", background: "rgba(229,72,77,0.08)", fontFamily: "var(--font-geist-mono), monospace", fontSize: "12px", color: "#E5484D" }}>
+            {error}
+          </div>
+        )}
 
         {/* SESSION BAR */}
         <div style={{ borderBottom: "1px solid rgba(255,255,255,0.08)", background: "#0B0C0E", flexShrink: 0, minWidth: 0 }}>
@@ -586,13 +447,19 @@ export function PlaygroundApp() {
             {/* verdict */}
             <div style={{ padding: "16px 18px", background: verdictBg, borderTop: "1px solid rgba(255,255,255,0.07)", transition: "background 0.4s ease", minWidth: 0 }}>
               <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-                <span style={{ fontFamily: "var(--font-geist-mono), monospace", fontSize: "12.5px", fontWeight: 600, letterSpacing: "0.05em", color: verdictColor }}>{verdict?.label ?? ""}</span>
+                <span style={{ fontFamily: "var(--font-geist-mono), monospace", fontSize: "12.5px", fontWeight: 600, letterSpacing: "0.05em", color: verdictColor }}>{verdictLabel}</span>
                 <span style={{ fontFamily: "var(--font-geist-mono), monospace", fontSize: "11px", color: "rgba(255,255,255,0.5)" }}>
-                  {verdict ? verdict.detail : running ? "running..." : "Select a template or type a message to start a trace."}
+                  {verdict
+                    ? verdict.blockedByLayer
+                      ? `blocked at ${verdict.blockedByLayer}`
+                      : verdict.outcome === "CLEAN" ? "all layers passed" : verdict.outcome.toLowerCase()
+                    : running
+                    ? "running..."
+                    : "Select a template or type a message to start a trace."}
                 </span>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "8px", gap: "10px" }}>
-                <span style={{ fontFamily: "var(--font-geist-mono), monospace", fontSize: "10.5px", color: "rgba(255,255,255,0.35)" }}>{verdict?.audits ?? ""}</span>
+                <span style={{ fontFamily: "var(--font-geist-mono), monospace", fontSize: "10.5px", color: "rgba(255,255,255,0.35)" }}>{verdictAudits}</span>
                 {verdict && (
                   <button
                     onClick={() => { setCopied(true); setTimeout(() => setCopied(false), 1600); }}

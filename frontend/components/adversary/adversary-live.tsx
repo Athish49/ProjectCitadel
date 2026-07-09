@@ -1,121 +1,182 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import {
-  SHORT_CAT,
-  CATS_WITH_LIVE,
-  ATTACKS_BY_CAT,
-  LAYER_MAP,
-  ADV_SAMPLES,
-  ADV_FALLBACK,
-} from "@/lib/data/adversary";
+import { useMemo } from "react";
+import { useAdversarialStream } from "@/lib/hooks/use-adversarial-stream";
+import { useAuditStream } from "@/lib/hooks/use-audit-stream";
+import type { AdversarialAttempt } from "@/lib/types/adversarial";
+import type { AuditRow } from "@/lib/types/audit";
+import { MATRIX_ROWS, ATTACK_NAMES as ATTACK_NAME } from "@/lib/data/matrix";
 
 const mono: React.CSSProperties = { fontFamily: "var(--font-geist-mono), monospace" };
 
-interface FeedRow {
-  key: string;
-  time: string;
-  catShort: string;
-  name: string;
-  surface: string;
-  duration: string;
-  outcome: "BLOCKED" | "PARTIAL";
-  color: string;
-  layer: string;
-  payload: string;
+const COST_PER_ATTEMPT = 0.006;
+const MONTHLY_CAP = 50;
+
+function fmtTime(iso: string): string {
+  try {
+    const d = new Date(iso);
+    const p = (n: number) => String(n).padStart(2, "0");
+    return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+  } catch {
+    return iso;
+  }
 }
 
-interface LiveState {
-  attacksToday: number;
-  advTotal: number;
-  advSpend: number;
-  focusCat: number;
-  tickCount: number;
-  paused: boolean;
-  feed: FeedRow[];
+function fmtRelative(iso: string | null): string {
+  if (!iso) return "never";
+  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  return `${Math.floor(diff / 3600)}h ago`;
 }
 
-function mkRow(ts: number, cat: number): FeedRow {
-  const pool = ATTACKS_BY_CAT[cat] ?? ATTACKS_BY_CAT[1];
-  const [id, name, pat] = pool[Math.floor(Math.random() * pool.length)];
-  const layer = LAYER_MAP[pat] ?? "defense_layer";
-  const isPartial = Math.random() < 0.1;
-  const d = new Date(ts);
-  const p = (n: number) => String(n).padStart(2, "0");
-  return {
-    key: `${ts}-${id}-${Math.random().toString(36).slice(2)}`,
-    time: `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`,
-    catShort: SHORT_CAT[cat] ?? "",
-    name: `#${id} ${name}`,
-    surface: Math.random() < 0.6 ? "claim-filing path" : "customer-inquiry path",
-    duration: `${Math.floor(60 + Math.random() * 900)}ms`,
-    outcome: isPartial ? "PARTIAL" : "BLOCKED",
-    color: isPartial ? "#E2A336" : "#3ECF8E",
-    layer,
-    payload: ADV_SAMPLES[id] ?? (ADV_FALLBACK[cat] ?? "Illustrative adversarial payload."),
-  };
+function AttemptFeedRow({ attempt }: { attempt: AdversarialAttempt }) {
+  const isBreach = attempt.verdict === "EVADED_INGRESS";
+  const isError  = attempt.verdict === "API_ERROR";
+  const outcomeLabel = isBreach ? "BREACH" : isError ? "ERROR" : "BLOCKED";
+  const outcomeColor = isBreach ? "#E5484D" : isError ? "#E2A336" : "#3ECF8E";
+  const name = ATTACK_NAME[attempt.attack_id] ?? `Attack #${attempt.attack_id}`;
+  const layer = attempt.sanitizer_detections[0] ?? (isBreach ? "evaded_ingress" : "ingress_pass");
+  const detail = attempt.sanitizer_detections.length > 0
+    ? attempt.sanitizer_detections.join(", ")
+    : isBreach
+    ? "no patterns detected — evaded"
+    : "clean pass";
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: "4px",
+        padding: "12px 18px",
+        borderBottom: "1px solid rgba(255,255,255,0.05)",
+        animation: "citadel-rowin 0.4s ease forwards",
+      }}
+    >
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "68px 1fr 90px",
+          gap: "12px",
+          alignItems: "baseline",
+          ...mono,
+          fontSize: "12px",
+        }}
+      >
+        <span style={{ color: "rgba(255,255,255,0.32)" }}>{fmtTime(attempt.timestamp)}</span>
+        <span style={{ color: "rgba(255,255,255,0.8)", fontFamily: "var(--font-geist), sans-serif", fontSize: "13px" }}>
+          #{attempt.attack_id} {name}
+        </span>
+        <span style={{ textAlign: "right", color: outcomeColor, fontWeight: 600, letterSpacing: "0.04em" }}>
+          {outcomeLabel}
+        </span>
+      </div>
+      <div style={{ fontSize: "11.5px", color: "rgba(255,255,255,0.3)", ...mono, paddingLeft: "1px" }}>
+        {isBreach ? "evaded at " : "blocked at "}
+        <span style={{ color: "rgba(255,255,255,0.45)" }}>{layer}</span>
+        {" · "}
+        <span style={{ color: "rgba(255,255,255,0.25)" }}>{detail}</span>
+      </div>
+    </div>
+  );
+}
+
+function AuditFeedRow({ row }: { row: AuditRow }) {
+  const sevColor = row.severity === "alert" ? "#E5484D"
+    : row.severity === "warn" ? "#E2A336"
+    : row.severity === "info" ? "#5BB5F2"
+    : "#3ECF8E";
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "60px 120px 1fr 80px",
+        gap: "10px",
+        padding: "8px 18px",
+        borderBottom: "1px solid rgba(255,255,255,0.04)",
+        ...mono,
+        fontSize: "11px",
+        animation: "citadel-rowin 0.3s ease forwards",
+      }}
+    >
+      <span style={{ color: "rgba(255,255,255,0.3)" }}>{fmtTime(row.ts)}</span>
+      <span style={{ color: "rgba(255,255,255,0.5)" }}>{row.agent}</span>
+      <span style={{ color: "rgba(255,255,255,0.65)" }}>
+        {row.action}
+        {row.label ? <span style={{ color: "rgba(255,255,255,0.3)", marginLeft: "6px" }}>[{row.label}]</span> : null}
+      </span>
+      <span style={{ textAlign: "right", color: sevColor, letterSpacing: "0.04em" }}>{row.outcome}</span>
+    </div>
+  );
+}
+
+function UnavailableMessage({ label }: { label: string }) {
+  return (
+    <div
+      style={{
+        flex: 1,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: "10px",
+        padding: "32px 18px",
+      }}
+    >
+      <div style={{ width: "28px", height: "28px", borderRadius: "50%", border: "1.5px solid rgba(255,255,255,0.12)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: "rgba(255,255,255,0.18)" }} />
+      </div>
+      <div style={{ ...mono, fontSize: "12px", color: "rgba(255,255,255,0.35)", textAlign: "center", lineHeight: 1.7 }}>
+        Backend unavailable
+        <br />
+        <span style={{ color: "rgba(255,255,255,0.2)", fontSize: "11px" }}>{label} · no data to display</span>
+      </div>
+    </div>
+  );
 }
 
 export function AdversaryLive() {
-  const [state, setState] = useState<LiveState>({
-    attacksToday: 1214,
-    advTotal: 48317,
-    advSpend: 12.41,
-    focusCat: CATS_WITH_LIVE[0],
-    tickCount: 0,
-    paused: false,
-    feed: [],
-  });
+  const {
+    attempts,
+    breachCount,
+    lastBreachAt,
+    connected,
+    backendDown,
+    paused,
+    togglePause,
+    clear: clearAttempts,
+    totalAttempts,
+  } = useAdversarialStream();
 
-  const pausedRef = useRef(false);
-  const feedRef = useRef<HTMLDivElement>(null);
+  const {
+    rows: auditRows,
+    paused: auditPaused,
+    connected: auditConnected,
+    backendDown: auditBackendDown,
+    togglePause: toggleAuditPause,
+    clear: clearAudit,
+  } = useAuditStream();
 
-  /* seed initial feed + start ticker */
-  useEffect(() => {
-    const now = Date.now();
-    const seed: FeedRow[] = [];
-    for (let i = 9; i >= 0; i--) {
-      seed.push(mkRow(now - i * 3400, CATS_WITH_LIVE[i % CATS_WITH_LIVE.length]));
-    }
-    setState((s) => ({ ...s, feed: seed }));
-
-    const intervalMs = 2400 + Math.random() * 1400;
-    const timer = setInterval(() => {
-      if (pausedRef.current) return;
-      setState((prev) => {
-        const idx = CATS_WITH_LIVE.indexOf(prev.focusCat);
-        const nextFocus =
-          (prev.tickCount + 1) % 5 === 0
-            ? CATS_WITH_LIVE[(idx + 1) % CATS_WITH_LIVE.length]
-            : prev.focusCat;
-        const row = mkRow(Date.now(), prev.focusCat);
-        return {
-          ...prev,
-          feed: [row, ...prev.feed].slice(0, 12),
-          focusCat: nextFocus,
-          tickCount: prev.tickCount + 1,
-          advTotal: prev.advTotal + 1,
-          attacksToday: prev.attacksToday + 1,
-          advSpend: Math.min(50, prev.advSpend + 0.006 + Math.random() * 0.01),
-        };
-      });
-    }, intervalMs);
-
-    return () => clearInterval(timer);
-  }, []);
-
-  function togglePause() {
-    setState((s) => {
-      pausedRef.current = !s.paused;
-      return { ...s, paused: !s.paused };
-    });
-  }
-
-  const { attacksToday, advTotal, advSpend, focusCat, paused, feed } = state;
-  const spendPct = Math.min(100, (advSpend / 50) * 100);
+  const advSpend   = Math.min(MONTHLY_CAP, totalAttempts * COST_PER_ATTEMPT);
+  const spendPct   = Math.min(100, (advSpend / MONTHLY_CAP) * 100);
   const spendColor = spendPct > 90 ? "#E5484D" : spendPct > 70 ? "#E2A336" : "#3ECF8E";
-  const focusCatName = SHORT_CAT[focusCat] ?? "";
+
   const streamColor = paused ? "rgba(255,255,255,0.4)" : "#3ECF8E";
+
+  const agentStatus      = backendDown ? "OFFLINE" : connected ? "LIVE" : "CONNECTING";
+  const agentStatusColor = backendDown ? "#E5484D" : connected ? "#3ECF8E" : "rgba(255,255,255,0.4)";
+
+  const focusCatName = useMemo(() => {
+    if (attempts.length === 0) return null;
+    const latest = attempts[0];
+    const row = MATRIX_ROWS.find((r) => r.id === latest.attack_id);
+    return row ? `${row.catShort} attacks` : null;
+  }, [attempts]);
+
+  const feedUnavailable = backendDown && attempts.length === 0;
+  const auditUnavailable = auditBackendDown && auditRows.length === 0;
 
   return (
     <div>
@@ -130,7 +191,7 @@ export function AdversaryLive() {
           gridTemplateColumns: "repeat(3, 1fr)",
         }}
       >
-        {/* Attempts today */}
+        {/* Attempts */}
         <div
           style={{
             padding: "26px 28px",
@@ -141,13 +202,13 @@ export function AdversaryLive() {
           }}
         >
           <div style={{ ...mono, fontSize: "11px", letterSpacing: "0.1em", color: "rgba(255,255,255,0.4)" }}>
-            ATTEMPTS TODAY
+            ATTACKS CAPTURED
           </div>
           <div style={{ ...mono, fontSize: "34px", fontWeight: 600, letterSpacing: "-0.02em", color: "rgba(255,255,255,0.95)" }}>
-            {attacksToday.toLocaleString("en-US")}
+            {backendDown ? "—" : totalAttempts.toLocaleString("en-US")}
           </div>
           <div style={{ fontSize: "12.5px", color: "rgba(255,255,255,0.38)" }}>
-            {advTotal.toLocaleString("en-US")} all-time
+            {backendDown ? "waiting for backend" : "this session"}
           </div>
         </div>
 
@@ -164,11 +225,11 @@ export function AdversaryLive() {
           <div style={{ ...mono, fontSize: "11px", letterSpacing: "0.1em", color: "rgba(255,255,255,0.4)" }}>
             SUCCESSFUL BREACHES
           </div>
-          <div style={{ ...mono, fontSize: "34px", fontWeight: 600, letterSpacing: "-0.02em", color: "#E5484D" }}>
-            3
+          <div style={{ ...mono, fontSize: "34px", fontWeight: 600, letterSpacing: "-0.02em", color: backendDown ? "rgba(255,255,255,0.3)" : "#E5484D" }}>
+            {backendDown ? "—" : breachCount}
           </div>
           <div style={{ fontSize: "12.5px", color: "rgba(255,255,255,0.38)" }}>
-            all-time · never edited
+            {backendDown ? "waiting for backend" : lastBreachAt ? `last: ${fmtRelative(lastBreachAt)}` : "none detected"}
           </div>
         </div>
 
@@ -177,26 +238,26 @@ export function AdversaryLive() {
           <div style={{ ...mono, fontSize: "11px", letterSpacing: "0.1em", color: "rgba(255,255,255,0.4)" }}>
             AGENT STATUS
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", ...mono, fontSize: "26px", fontWeight: 600, letterSpacing: "-0.02em", color: "#3ECF8E" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", ...mono, fontSize: "26px", fontWeight: 600, letterSpacing: "-0.02em", color: agentStatusColor }}>
             <span
               style={{
                 width: "9px",
                 height: "9px",
                 borderRadius: "50%",
-                background: "#3ECF8E",
-                animation: "citadel-pulse 2.2s ease-in-out infinite",
+                background: agentStatusColor,
+                animation: connected && !backendDown ? "citadel-pulse 2.2s ease-in-out infinite" : "none",
                 flexShrink: 0,
               }}
             />
-            LIVE
+            {agentStatus}
           </div>
           <div style={{ fontSize: "12.5px", color: "rgba(255,255,255,0.38)" }}>
-            focused on {focusCatName}
+            {backendDown ? "backend not reachable" : focusCatName ? `focused on ${focusCatName}` : "awaiting first attempt"}
           </div>
         </div>
       </div>
 
-      {/* status indicator */}
+      {/* System status bar */}
       <div
         style={{
           display: "flex",
@@ -213,32 +274,47 @@ export function AdversaryLive() {
             width: "6px",
             height: "6px",
             borderRadius: "50%",
-            background: "#3ECF8E",
-            animation: "citadel-pulse 2.2s ease-in-out infinite",
+            background: backendDown ? "#E5484D" : connected ? "#3ECF8E" : "rgba(255,255,255,0.3)",
+            animation: connected && !backendDown ? "citadel-pulse 2.2s ease-in-out infinite" : "none",
             flexShrink: 0,
           }}
         />
-        SYSTEM: LIVE — telemetry from /sse/adversarial · sandboxed instance only, never the live showcase
+        {backendDown
+          ? "SYSTEM: BACKEND UNAVAILABLE — /sse/adversarial unreachable · retrying"
+          : `SYSTEM: ${connected ? "LIVE" : "CONNECTING"} — telemetry from /sse/adversarial · sandboxed instance only, never the live showcase`}
       </div>
 
-      {/* Feed + sidebar */}
+      {/* Feed + sidebar — stretch so feed matches sidebar height */}
       <div
         data-main-grid=""
         style={{
           display: "grid",
           gridTemplateColumns: "1fr 360px",
           gap: "20px",
-          alignItems: "start",
+          alignItems: "stretch",
           marginTop: "64px",
         }}
       >
-        {/* Live feed */}
+        {/* Live attack feed — wrapped with section label */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: "#E5484D", flexShrink: 0 }} />
+              <span style={{ fontSize: "13px", fontWeight: 600, letterSpacing: "0.06em", color: "rgba(255,255,255,0.85)", textTransform: "uppercase" }}>
+                Attacker&apos;s View
+              </span>
+            </div>
+            <div style={{ marginTop: "4px", paddingLeft: "15px", fontSize: "12px", color: "rgba(255,255,255,0.35)" }}>
+              Every attack attempt the adversarial agent fires — blocked or evaded
+            </div>
+          </div>
         <div
           style={{
             border: "1px solid rgba(255,255,255,0.09)",
             background: "#0C0D0F",
             display: "flex",
             flexDirection: "column",
+            flex: 1,
           }}
         >
           {/* Feed header */}
@@ -250,6 +326,7 @@ export function AdversaryLive() {
               justifyContent: "space-between",
               alignItems: "center",
               gap: "12px",
+              flexShrink: 0,
             }}
           >
             <span style={{ ...mono, fontSize: "11px", letterSpacing: "0.1em", color: "rgba(255,255,255,0.4)" }}>
@@ -263,7 +340,7 @@ export function AdversaryLive() {
                   gap: "7px",
                   ...mono,
                   fontSize: "11px",
-                  color: streamColor,
+                  color: feedUnavailable ? "#E5484D" : streamColor,
                 }}
               >
                 <span
@@ -271,88 +348,46 @@ export function AdversaryLive() {
                     width: "6px",
                     height: "6px",
                     borderRadius: "50%",
-                    background: streamColor,
-                    animation: paused ? "none" : "citadel-pulse 2.2s ease-in-out infinite",
+                    background: feedUnavailable ? "#E5484D" : streamColor,
+                    animation: !feedUnavailable && !paused ? "citadel-pulse 2.2s ease-in-out infinite" : "none",
                   }}
                 />
-                {paused ? "PAUSED" : "STREAMING"}
+                {feedUnavailable ? "UNAVAILABLE" : paused ? "PAUSED" : "STREAMING"}
               </span>
-              <button
-                onClick={togglePause}
-                className="btn-outline"
-                style={{
-                  background: "transparent",
-                  ...mono,
-                  fontSize: "11px",
-                  padding: "5px 11px",
-                  borderRadius: "5px",
-                  cursor: "pointer",
-                }}
-              >
-                {paused ? "Resume" : "Pause"}
-              </button>
+              {!feedUnavailable && (
+                <div style={{ display: "flex", gap: "8px" }}>
+                  <button
+                    onClick={togglePause}
+                    className="btn-outline"
+                    style={{ background: "transparent", ...mono, fontSize: "11px", padding: "5px 11px", borderRadius: "5px", cursor: "pointer" }}
+                  >
+                    {paused ? "Resume" : "Pause"}
+                  </button>
+                  <button
+                    onClick={clearAttempts}
+                    className="btn-outline"
+                    style={{ background: "transparent", ...mono, fontSize: "11px", padding: "5px 11px", borderRadius: "5px", cursor: "pointer" }}
+                  >
+                    Clear
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Feed rows */}
-          <div
-            ref={feedRef}
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              maxHeight: "620px",
-              overflowY: "auto",
-            }}
-          >
-            {feed.map((f) => (
-              <div
-                key={f.key}
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "4px",
-                  padding: "12px 18px",
-                  borderBottom: "1px solid rgba(255,255,255,0.05)",
-                  animation: "citadel-rowin 0.4s ease forwards",
-                }}
-              >
-                <div
-                  data-feed-row=""
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "68px 96px 1fr 156px 70px 90px",
-                    gap: "12px",
-                    alignItems: "baseline",
-                    ...mono,
-                    fontSize: "12px",
-                  }}
-                >
-                  <span style={{ color: "rgba(255,255,255,0.32)" }}>{f.time}</span>
-                  <span data-feed-catshort="" style={{ color: "rgba(255,255,255,0.42)", fontSize: "10.5px" }}>
-                    {f.catShort}
-                  </span>
-                  <span style={{ color: "rgba(255,255,255,0.8)", fontFamily: "var(--font-geist), sans-serif", fontSize: "13px" }}>
-                    {f.name}
-                  </span>
-                  <span data-feed-surface="" style={{ color: "rgba(255,255,255,0.4)" }}>
-                    {f.surface}
-                  </span>
-                  <span data-feed-duration="" style={{ color: "rgba(255,255,255,0.4)", textAlign: "right" }}>
-                    {f.duration}
-                  </span>
-                  <span style={{ textAlign: "right", color: f.color, fontWeight: 600, letterSpacing: "0.04em" }}>
-                    {f.outcome}
-                  </span>
-                </div>
-                <div style={{ fontSize: "11.5px", color: "rgba(255,255,255,0.3)", ...mono, paddingLeft: "1px" }}>
-                  blocked at{" "}
-                  <span style={{ color: "rgba(255,255,255,0.45)" }}>{f.layer}</span>
-                  {" · "}
-                  <span style={{ color: "rgba(255,255,255,0.25)" }}>{f.payload}</span>
-                </div>
+          {/* Feed body — fills remaining height */}
+          <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column" }}>
+            {feedUnavailable ? (
+              <UnavailableMessage label="/sse/adversarial" />
+            ) : attempts.length === 0 ? (
+              <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", ...mono, fontSize: "12px", color: "rgba(255,255,255,0.3)" }}>
+                waiting for attack attempts…
               </div>
-            ))}
+            ) : (
+              attempts.map((a) => <AttemptFeedRow key={a.trace_id} attempt={a} />)
+            )}
           </div>
+        </div>
         </div>
 
         {/* Sidebar */}
@@ -369,11 +404,11 @@ export function AdversaryLive() {
               MONTHLY COST — CLAUDE HAIKU 4.5
             </div>
             <div style={{ display: "flex", alignItems: "baseline", gap: "8px", marginTop: "12px" }}>
-              <span style={{ ...mono, fontSize: "30px", fontWeight: 600, color: spendColor }}>
-                ${advSpend.toFixed(2)}
+              <span style={{ ...mono, fontSize: "30px", fontWeight: 600, color: backendDown ? "rgba(255,255,255,0.3)" : spendColor }}>
+                {backendDown ? "—" : `$${advSpend.toFixed(2)}`}
               </span>
               <span style={{ ...mono, fontSize: "14px", color: "rgba(255,255,255,0.4)" }}>
-                / $50.00 cap
+                / ${MONTHLY_CAP.toFixed(2)} cap
               </span>
             </div>
             <div
@@ -388,7 +423,7 @@ export function AdversaryLive() {
               <div
                 style={{
                   height: "100%",
-                  width: `${spendPct.toFixed(1)}%`,
+                  width: backendDown ? "0%" : `${spendPct.toFixed(1)}%`,
                   background: spendColor,
                   transition: "width 1s ease",
                 }}
@@ -415,8 +450,8 @@ export function AdversaryLive() {
             </span>
             <div style={{ display: "flex", flexDirection: "column", gap: "10px", fontSize: "13px" }}>
               {[
-                { label: "Model",     value: "Claude Haiku 4.5",                              mono: true  },
-                { label: "Isolation", value: "Separate container, sandboxed test instance only", mono: false },
+                { label: "Model",     value: "Claude Haiku 4.5",                                    mono: true  },
+                { label: "Isolation", value: "Separate container, sandboxed test instance only",    mono: false },
                 { label: "Reaches",   value: "Adversarial-test API only — never the live showcase", mono: false },
               ].map(({ label, value, mono: isMono }) => (
                 <div key={label} style={{ display: "flex", justifyContent: "space-between", gap: "10px" }}>
@@ -467,7 +502,7 @@ export function AdversaryLive() {
                 TESTING NOW
               </div>
               <div style={{ fontSize: "15px", fontWeight: 600, color: "rgba(255,255,255,0.92)", marginTop: "6px" }}>
-                {focusCatName}
+                {backendDown ? "—" : (focusCatName ?? "awaiting data")}
               </div>
             </div>
             <span
@@ -475,11 +510,132 @@ export function AdversaryLive() {
                 width: "8px",
                 height: "8px",
                 borderRadius: "50%",
-                background: "#3ECF8E",
-                animation: "citadel-pulse 2.2s ease-in-out infinite",
+                background: agentStatusColor,
+                animation: connected && !backendDown ? "citadel-pulse 2.2s ease-in-out infinite" : "none",
                 flexShrink: 0,
               }}
             />
+          </div>
+        </div>
+      </div>
+
+      {/* Live Audit Feed */}
+      <div style={{ marginTop: "48px" }}>
+        <div style={{ marginBottom: "12px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: "#3ECF8E", flexShrink: 0 }} />
+            <span style={{ fontSize: "13px", fontWeight: 600, letterSpacing: "0.06em", color: "rgba(255,255,255,0.85)", textTransform: "uppercase" }}>
+              Defender&apos;s View
+            </span>
+          </div>
+          <div style={{ marginTop: "4px", paddingLeft: "15px", fontSize: "12px", color: "rgba(255,255,255,0.35)" }}>
+            Real-time audit trail — every agent action, tool call, and security event across the pipeline
+          </div>
+        </div>
+        <div
+          style={{
+            border: "1px solid rgba(255,255,255,0.09)",
+            background: "#0C0D0F",
+          }}
+        >
+          {/* Audit header */}
+          <div
+            style={{
+              padding: "14px 18px",
+              borderBottom: "1px solid rgba(255,255,255,0.07)",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: "12px",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <span style={{ ...mono, fontSize: "11px", letterSpacing: "0.1em", color: "rgba(255,255,255,0.4)" }}>
+                LIVE AUDIT — /sse/audit
+              </span>
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  ...mono,
+                  fontSize: "10px",
+                  color: auditUnavailable ? "#E5484D" : auditConnected ? "#3ECF8E" : "rgba(255,255,255,0.3)",
+                }}
+              >
+                <span
+                  style={{
+                    width: "5px",
+                    height: "5px",
+                    borderRadius: "50%",
+                    background: auditUnavailable ? "#E5484D" : auditConnected ? "#3ECF8E" : "rgba(255,255,255,0.3)",
+                    animation: auditConnected && !auditPaused && !auditUnavailable ? "citadel-pulse 2.2s ease-in-out infinite" : "none",
+                  }}
+                />
+                {auditUnavailable ? "UNAVAILABLE" : auditConnected ? (auditPaused ? "PAUSED" : "STREAMING") : "CONNECTING"}
+              </span>
+            </div>
+            {!auditUnavailable && (
+              <div style={{ display: "flex", gap: "8px" }}>
+                <button
+                  onClick={toggleAuditPause}
+                  className="btn-outline"
+                  style={{ background: "transparent", ...mono, fontSize: "11px", padding: "5px 11px", borderRadius: "5px", cursor: "pointer" }}
+                >
+                  {auditPaused ? "Resume" : "Pause"}
+                </button>
+                <button
+                  onClick={clearAudit}
+                  className="btn-outline"
+                  style={{ background: "transparent", ...mono, fontSize: "11px", padding: "5px 11px", borderRadius: "5px", cursor: "pointer" }}
+                >
+                  Clear
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Column headers — only when data is present */}
+          {!auditUnavailable && auditRows.length > 0 && (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "60px 120px 1fr 80px",
+                gap: "10px",
+                padding: "8px 18px",
+                borderBottom: "1px solid rgba(255,255,255,0.05)",
+                ...mono,
+                fontSize: "10px",
+                letterSpacing: "0.08em",
+                color: "rgba(255,255,255,0.3)",
+              }}
+            >
+              <span>TIME</span>
+              <span>AGENT</span>
+              <span>ACTION · LABEL</span>
+              <span style={{ textAlign: "right" }}>OUTCOME</span>
+            </div>
+          )}
+
+          {/* Audit body */}
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              minHeight: "320px",
+              maxHeight: "400px",
+              overflowY: "auto",
+            }}
+          >
+            {auditUnavailable ? (
+              <UnavailableMessage label="/sse/audit" />
+            ) : auditRows.length === 0 ? (
+              <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", ...mono, fontSize: "12px", color: "rgba(255,255,255,0.3)" }}>
+                waiting for audit events…
+              </div>
+            ) : (
+              auditRows.map((r) => <AuditFeedRow key={r.id} row={r} />)
+            )}
           </div>
         </div>
       </div>

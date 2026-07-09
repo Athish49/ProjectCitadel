@@ -31,13 +31,13 @@ export const STATE_VARS = [
 
 export const FORMAL_EDGES = [
   { n: "01", from: "INTAKE",            to: "IDENTITY_PENDING",  guard: "intake_complete = TRUE" },
-  { n: "02", from: "INTAKE",            to: "DENIED",            guard: "reject_as_out_of_scope" },
-  { n: "03", from: "IDENTITY_PENDING",  to: "IDENTITY_VERIFIED", guard: "identity_verified = TRUE" },
-  { n: "04", from: "IDENTITY_VERIFIED", to: "PROCESSING",        guard: "—" },
+  { n: "02", from: "IDENTITY_PENDING",  to: "IDENTITY_VERIFIED", guard: "identity_verified = TRUE" },
+  { n: "03", from: "IDENTITY_VERIFIED", to: "PROCESSING",        guard: "—" },
+  { n: "04", from: "IDENTITY_VERIFIED", to: "ESCALATED",         guard: "complaint_captured = TRUE" },
   { n: "05", from: "PROCESSING",        to: "DECIDED",           guard: "damage_assessed ∧ coverage_calculated ∧ fraud_decision ≠ NONE" },
-  { n: "06", from: "PROCESSING",        to: "ESCALATED",         guard: "complaint_captured = TRUE" },
-  { n: "07", from: "DECIDED",           to: "SETTLED",           guard: "fraud_decision = CLEAR ∧ settlement_amount ≤ auto_approve_limit" },
-  { n: "08", from: "DECIDED",           to: "ESCALATED",         guard: "fraud_decision ∈ {FLAG, DENY} ∨ amount > limit" },
+  { n: "06", from: "DECIDED",           to: "SETTLED",           guard: "fraud_decision = CLEAR ∧ settlement_amount ≤ auto_approve_limit" },
+  { n: "07", from: "DECIDED",           to: "ESCALATED",         guard: "fraud_decision ∈ {FLAG, DENY} ∨ amount > limit" },
+  { n: "08", from: "DECIDED",           to: "DENIED",            guard: "orchestrator administrative override" },
   { n: "09", from: "SETTLED",           to: "CLOSED",            guard: "—" },
   { n: "10", from: "ESCALATED",         to: "CLOSED",            guard: "human review resolved" },
   { n: "11", from: "DENIED",            to: "CLOSED",            guard: "—" },
@@ -102,17 +102,17 @@ export const CHECK_STEPS = [
 
 // State graph geometry
 export const GRAPH_LINES = [
-  { x1: 130, y1:  84, x2: 130, y2: 170 },
-  { x1: 220, y1:  62, x2: 660, y2: 322 },
-  { x1: 130, y1: 214, x2: 130, y2: 300 },
-  { x1: 220, y1: 322, x2: 350, y2: 192 },
-  { x1: 440, y1: 214, x2: 440, y2: 300 },
-  { x1: 530, y1: 192, x2: 660, y2: 192 },
-  { x1: 530, y1: 300, x2: 660, y2:  62 },
-  { x1: 530, y1: 322, x2: 750, y2: 214 },
-  { x1: 750, y1:  84, x2: 750, y2: 430 },
-  { x1: 750, y1: 214, x2: 750, y2: 430 },
-  { x1: 750, y1: 344, x2: 750, y2: 430 },
+  { x1: 130, y1:  84, x2: 130, y2: 170 },  // INTAKE → IDENTITY_PENDING
+  { x1: 220, y1: 322, x2: 660, y2: 192 },  // IDENTITY_VERIFIED → ESCALATED (complaint)
+  { x1: 130, y1: 214, x2: 130, y2: 300 },  // IDENTITY_PENDING → IDENTITY_VERIFIED
+  { x1: 220, y1: 322, x2: 350, y2: 192 },  // IDENTITY_VERIFIED → PROCESSING
+  { x1: 440, y1: 214, x2: 440, y2: 300 },  // PROCESSING → DECIDED
+  { x1: 530, y1: 322, x2: 660, y2: 322 },  // DECIDED → DENIED
+  { x1: 530, y1: 300, x2: 660, y2:  62 },  // DECIDED → SETTLED
+  { x1: 530, y1: 322, x2: 750, y2: 214 },  // DECIDED → ESCALATED
+  { x1: 840, y1:  62, x2: 970, y2: 192 },  // SETTLED → CLOSED
+  { x1: 840, y1: 192, x2: 970, y2: 192 },  // ESCALATED → CLOSED (horizontal)
+  { x1: 840, y1: 322, x2: 970, y2: 192 },  // DENIED → CLOSED
 ];
 
 export const GRAPH_NODES = [
@@ -124,21 +124,21 @@ export const GRAPH_NODES = [
   { x: 660, y:  40, label: "SETTLED",           color: "#3ECF8E",               border: "#3ECF8E",               dashed: false },
   { x: 660, y: 170, label: "ESCALATED",         color: "#E0A73E",               border: "#E0A73E",               dashed: false },
   { x: 660, y: 300, label: "DENIED",            color: "#E5484D",               border: "#E5484D",               dashed: false },
-  { x: 660, y: 430, label: "CLOSED",            color: "rgba(255,255,255,0.6)", border: "rgba(255,255,255,0.28)", dashed: true  },
+  { x: 970, y: 170, label: "CLOSED",            color: "rgba(255,255,255,0.6)", border: "rgba(255,255,255,0.28)", dashed: true  },
 ];
 
 export const GRAPH_PARTICLES = [
-  { path: "M130 84 L130 170",  color: "#3ECF8E", dur: "2.4s", delay: "0s"   },
-  { path: "M220 62 L660 322",  color: "#E5484D", dur: "3.6s", delay: "0.4s" },
-  { path: "M130 214 L130 300", color: "#3ECF8E", dur: "2.4s", delay: "0.8s" },
-  { path: "M220 322 L350 192", color: "#3ECF8E", dur: "2.8s", delay: "1.2s" },
-  { path: "M440 214 L440 300", color: "#3ECF8E", dur: "2.2s", delay: "0.2s" },
-  { path: "M530 192 L660 192", color: "#E0A73E", dur: "2.6s", delay: "1.6s" },
-  { path: "M530 300 L660 62",  color: "#3ECF8E", dur: "3.2s", delay: "0.6s" },
-  { path: "M530 322 L750 214", color: "#E0A73E", dur: "3.0s", delay: "2.0s" },
-  { path: "M750 84 L750 430",  color: "#3ECF8E", dur: "3.8s", delay: "0.3s" },
-  { path: "M750 214 L750 430", color: "#E0A73E", dur: "2.6s", delay: "1.4s" },
-  { path: "M750 344 L750 430", color: "#E5484D", dur: "2.0s", delay: "0.9s" },
+  { path: "M130 84 L130 170",  color: "#3ECF8E", dur: "2.4s", delay: "0s"   },  // INTAKE → IDENTITY_PENDING
+  { path: "M220 322 L660 192", color: "#E0A73E", dur: "3.6s", delay: "0.4s" },  // IDENTITY_VERIFIED → ESCALATED (complaint)
+  { path: "M130 214 L130 300", color: "#3ECF8E", dur: "2.4s", delay: "0.8s" },  // IDENTITY_PENDING → IDENTITY_VERIFIED
+  { path: "M220 322 L350 192", color: "#3ECF8E", dur: "2.8s", delay: "1.2s" },  // IDENTITY_VERIFIED → PROCESSING
+  { path: "M440 214 L440 300", color: "#3ECF8E", dur: "2.2s", delay: "0.2s" },  // PROCESSING → DECIDED
+  { path: "M530 322 L660 322", color: "#E5484D", dur: "2.6s", delay: "1.6s" },  // DECIDED → DENIED
+  { path: "M530 300 L660 62",  color: "#3ECF8E", dur: "3.2s", delay: "0.6s" },  // DECIDED → SETTLED
+  { path: "M530 322 L750 214", color: "#E0A73E", dur: "3.0s", delay: "2.0s" },  // DECIDED → ESCALATED
+  { path: "M840 62 L970 192",  color: "#3ECF8E", dur: "2.2s", delay: "0.3s" },  // SETTLED → CLOSED
+  { path: "M840 192 L970 192", color: "#E0A73E", dur: "1.8s", delay: "1.4s" },  // ESCALATED → CLOSED
+  { path: "M840 322 L970 192", color: "#E5484D", dur: "1.8s", delay: "0.9s" },  // DENIED → CLOSED
 ];
 
 const cmt  = "rgba(255,255,255,0.32)";

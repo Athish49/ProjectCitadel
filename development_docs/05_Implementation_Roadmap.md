@@ -70,7 +70,7 @@ Every architectural defense pattern is implemented and unit-tested before any ag
 
 | # | Task | Output | Hours |
 |---|------|--------|-------|
-| 1.1.1 | Repo bootstrap; Docker Compose skeleton; Postgres+ChromaDB+OTel-collector+Tempo+Grafana | `make up` boots stack | 4 |
+| 1.1.1 | Repo bootstrap; Docker Compose skeleton; Postgres+OTel-collector+Tempo+Grafana | `make up` boots stack | 4 |
 | 1.1.2 | DB schema with RLS policies on all customer-scoped tables (Doc 03 §2) | Migrations applied, RLS tests pass | 5 |
 | 1.1.3 | Per-agent DB roles with scoped GRANTs (Doc 03 §3) | Role tests pass: each role can only see/do what matrix says | 4 |
 | 1.1.4 | Audit log table + hash-chain implementation + `verify_chain` job | Inserting rows produces verifiable chain | 5 |
@@ -324,7 +324,7 @@ Phase 6 polish and launch
 | Orchestrator | LLM-based, code-based | Code-based (P2) | Determinism is a core defense; LLM orchestrator is itself an attack surface. |
 | LLM provider | Claude, GPT, local | Claude (Anthropic) | Best tool-use; current latest models Opus 4.7 / Sonnet 4.6 / Haiku 4.5 |
 | Per-model selection | One model everywhere vs mixed | Haiku for parsers & adversarial; Sonnet for actors needing reasoning | Cost / latency / capability balance |
-| Vector store | ChromaDB, Qdrant, pgvector | ChromaDB | Adequate for ≤25 docs; minimal ops burden |
+| Vector store | Qdrant, pgvector | Qdrant (cloud) | Cloud-hosted; 3 label-tiered collections; zero local ops burden |
 | Database | Postgres, SQLite, MySQL | Postgres 16 | RLS, JSONB, hash-chain SQL, mature ecosystem |
 | Sandbox | Docker, gVisor, Firecracker | Docker `--network=none` + drop-caps + read-only rootfs | Reproducible; sufficient demonstration; can swap to gVisor for production-shaped deploy |
 | Inter-agent signing | HMAC shared secret, Ed25519 asymmetric | Ed25519 | Compromise of one agent doesn't reveal others |

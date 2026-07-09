@@ -97,11 +97,6 @@ export default function FormalPage() {
           </div>
         </div>
 
-        {/* prev/next */}
-        <div style={{ display: "flex", flexDirection: "column", padding: "14px 22px 22px", borderTop: "1px solid rgba(255,255,255,0.06)", gap: "8px" }}>
-          <Link href="/architecture" className="link-dim" style={{ ...mono, fontSize: "11.5px" }}>← Architecture</Link>
-          <Link href="/playground"   className="link-dim" style={{ ...mono, fontSize: "11.5px" }}>Playground →</Link>
-        </div>
       </aside>
 
       {/* ══ MAIN ══ */}
@@ -171,15 +166,18 @@ export default function FormalPage() {
             </div>
 
             {/* reachable state graph */}
-            <div style={{ marginTop: "30px", border: "1px solid rgba(255,255,255,0.08)", background: "#0B0C0D" }}>
+            <p style={{ margin: "28px 0 10px", ...mono, fontSize: "12px", letterSpacing: "0.06em", color: "rgba(255,255,255,0.32)", textTransform: "uppercase" }}>
+              Claim Filing Pipeline — reachable states from intake to terminal closure
+            </p>
+            <div style={{ border: "1px solid rgba(255,255,255,0.08)", background: "#0B0C0D" }}>
               <div style={{ padding: "14px 20px", borderBottom: "1px solid rgba(255,255,255,0.07)", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
                 <span style={{ ...mono, fontSize: "11px", letterSpacing: "0.08em", color: "rgba(255,255,255,0.4)" }}>REACHABLE STATE GRAPH · LIVE</span>
                 <span style={{ ...mono, fontSize: "11px", color: "rgba(255,255,255,0.32)" }}>dots trace the 11 accepted transitions only</span>
               </div>
 
-              <div style={{ padding: "26px", overflow: "hidden", height: "433px" }}>
-                <div style={{ position: "relative", width: "860px", height: "476px", transform: "scale(0.8)", transformOrigin: "top left" }}>
-                  <svg width="860" height="476" style={{ position: "absolute", top: 0, left: 0, overflow: "visible", pointerEvents: "none" }}>
+              <div style={{ padding: "26px", overflow: "hidden", height: "290px" }}>
+                <div style={{ position: "relative", width: "1190px", height: "380px", transform: "scale(0.61)", transformOrigin: "top left" }}>
+                  <svg width="1190" height="380" style={{ position: "absolute", top: 0, left: 0, overflow: "visible", pointerEvents: "none" }}>
                     {GRAPH_LINES.map((ln, i) => (
                       <line key={i} x1={ln.x1} y1={ln.y1} x2={ln.x2} y2={ln.y2} stroke="rgba(255,255,255,0.14)" strokeWidth={1} />
                     ))}
@@ -245,6 +243,9 @@ export default function FormalPage() {
                   </span>
                 ))}
                 <span style={{ color: "rgba(255,255,255,0.28)" }}>CLOSED — dashed border marks the absorbing terminal state</span>
+              </div>
+              <div style={{ padding: "10px 20px 14px", borderTop: "1px solid rgba(255,255,255,0.04)", ...mono, fontSize: "11px", color: "rgba(255,255,255,0.24)", textAlign: "center" }}>
+                This state machine governs the Claim Filing pipeline exclusively. Other pipelines (FAQ, Inquiry, Complaint) are stateless.
               </div>
             </div>
           </section>

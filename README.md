@@ -108,7 +108,7 @@ ProjectCitadel/
 ```bash
 cd backend
 cp .env.example .env          # fill in ANTHROPIC_API_KEY
-make up                       # postgres + chromadb + otel-collector + tempo + grafana
+make up                       # postgres + qdrant + otel-collector + tempo + grafana
 make migrate                  # apply schema migrations + RLS policies
 make seed                     # load 30 claims, customers, policies
 make health                   # verify all services ready
@@ -199,7 +199,7 @@ Six internal specs live in [`development_docs/`](development_docs/) and are serv
 
 ## Stack
 
-**Backend:** Python 3.13 · FastAPI · PostgreSQL 16 · ChromaDB · OpenTelemetry · Grafana Tempo · Docker Compose · uv · Anthropic Claude API
+**Backend:** Python 3.13 · FastAPI · PostgreSQL 16 · Qdrant · OpenTelemetry · Grafana Tempo · Docker Compose · uv · Anthropic Claude API
 
 **Console:** Next.js 15 (App Router, RSC) · TypeScript · Tailwind v4 · Framer Motion · React Flow · Shiki · react-markdown
 

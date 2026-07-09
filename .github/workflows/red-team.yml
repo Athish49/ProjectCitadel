@@ -40,7 +40,7 @@ jobs:
           name: unit-test-results
           path: backend/unit-results.json
 
-# ── Job 2: Integration tests (Postgres + ChromaDB) ───────────────────────────
+# ── Job 2: Integration tests (Postgres) ──────────────────────────────────────
   integration:
     name: Integration Tests
     runs-on: ubuntu-latest
@@ -63,20 +63,6 @@ jobs:
           --health-timeout 3s
           --health-retries 10
 
-      chromadb:
-        image: chromadb/chroma:0.5.20
-        env:
-          IS_PERSISTENT: "FALSE"
-          ANONYMIZED_TELEMETRY: "FALSE"
-        ports:
-          - 8000:8000
-        options: >-
-          --health-cmd "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/api/v2/heartbeat\")'"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
-          --health-start-period 10s
-
     steps:
       - uses: actions/checkout@v4
 
@@ -96,7 +82,7 @@ jobs:
           POSTGRES_HOST: localhost
           POSTGRES_PORT: 5432
 
-      - name: Seed ChromaDB (policy docs + fraud rules)
+      - name: Seed database (Postgres)
         run: uv run python -m db.seed
         env:
           POSTGRES_USER: postgres
@@ -104,8 +90,6 @@ jobs:
           POSTGRES_DB: secureclaim
           POSTGRES_HOST: localhost
           POSTGRES_PORT: 5432
-          CHROMADB_HOST: localhost
-          CHROMADB_PORT: 8000
         continue-on-error: true  # seed is best-effort; tests that need it are skipped if absent
 
       - name: Run integration red-team suite

@@ -6,7 +6,7 @@ Resilient multi-agent claims pipeline. Specs live in `../development_docs/`. The
 
 ```bash
 cp .env.example .env          # set ANTHROPIC_API_KEY and DATABASE_URL
-make up                       # postgres + chromadb + otel-collector + tempo + grafana
+make up                       # postgres + otel-collector + tempo + grafana
 make migrate                  # schema migrations + RLS policies
 make seed                     # 30 claims, customers, policies, vehicles
 make health                   # verify all services ready
@@ -24,9 +24,9 @@ Services after `make up`:
 |---------|-----|
 | API | http://localhost:8080 |
 | PostgreSQL | localhost:5432 |
-| ChromaDB | http://localhost:8000 |
 | Grafana | http://localhost:3001 |
 | Tempo | http://localhost:3200 |
+| Qdrant | cloud (see QDRANT_URL in .env) |
 
 ## Tests
 
@@ -51,7 +51,7 @@ make formal-conformance    # 102 conformance tests
 ## Adversarial agent
 
 ```bash
-# Runs in a Docker-isolated network; can reach the API but not Postgres/ChromaDB.
+# Runs in a Docker-isolated network; can reach the API but not Postgres directly.
 docker compose --profile adversarial up -d --build
 # Monthly spend capped at $50 (MONTHLY_SPEND_CAP_USD in .env)
 ```
