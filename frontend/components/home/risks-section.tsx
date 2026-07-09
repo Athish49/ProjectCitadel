@@ -29,7 +29,7 @@ export function RisksSection() {
           maxWidth: "940px",
         }}
       >
-        <span style={{ color: "rgba(255,255,255,0.97)" }}>What still doesn't work.</span>
+        <span style={{ color: "rgba(255,255,255,0.97)" }}>What still doesn&apos;t work.</span>
         <span style={{ color: "rgba(255,255,255,0.42)" }}>
           {" "}Thirteen named limitations with root causes, published in full. Honesty is a stronger credential than a perfect score.
         </span>

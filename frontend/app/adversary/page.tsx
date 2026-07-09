@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { PageNav } from "@/components/layout/page-nav";
 import { Footer } from "@/components/layout/footer";
 import { AdversaryLive } from "@/components/adversary/adversary-live";
@@ -30,9 +31,9 @@ export default function AdversaryPage() {
               textTransform: "uppercase",
             }}
           >
-            <a href="/" style={{ color: "rgba(255,255,255,0.45)" }}>
+            <Link href="/" style={{ color: "rgba(255,255,255,0.45)" }}>
               Project Citadel
-            </a>
+            </Link>
             <span style={{ color: "rgba(255,255,255,0.2)" }}> / </span>
             <span>Adversarial Agent</span>
           </div>

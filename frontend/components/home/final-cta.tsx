@@ -52,7 +52,7 @@ export function FinalCTA() {
             lineHeight: 1.6,
           }}
         >
-          Every payload you fire runs the production pipeline and writes real audit rows. If you find something the adversarial agent hasn't, it becomes a GitHub issue with your trace attached.
+          Every payload you fire runs the production pipeline and writes real audit rows. If you find something the adversarial agent hasn&apos;t, it becomes a GitHub issue with your trace attached.
         </div>
 
         <div style={{ display: "flex", gap: "14px" }}>

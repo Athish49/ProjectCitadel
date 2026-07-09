@@ -105,7 +105,7 @@ export default function ArchitecturePage() {
         </Reveal>
 
         <Reveal style={{ marginTop: "14px", fontSize: "13px", color: "rgba(255,255,255,0.4)" }}>
-          Nothing downstream of quarantine ever receives raw user text. That single property removes the attacker's primary channel to every privileged component.
+          Nothing downstream of quarantine ever receives raw user text. That single property removes the attacker&apos;s primary channel to every privileged component.
         </Reveal>
       </section>
 
@@ -333,7 +333,7 @@ export default function ArchitecturePage() {
         >
           <span style={{ color: "rgba(255,255,255,0.97)" }}>Three input types, three pipelines, one label.</span>
           <span style={{ color: "rgba(255,255,255,0.42)" }}>
-            {" "}Everything that arrives from outside leaves ingress tagged UNTRUSTED — or doesn't leave at all.
+            {" "}Everything that arrives from outside leaves ingress tagged UNTRUSTED — or doesn&apos;t leave at all.
           </span>
         </Reveal>
 

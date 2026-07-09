@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
+import Link from "next/link";
 import { SCENARIOS, MAIN_STATES, BRANCH_STATES, GUARDS, LIMITS } from "@/lib/data/architecture";
 import { Reveal } from "@/components/home/reveal";
 
@@ -299,7 +300,7 @@ export function StateMachine() {
             }}
           >
             The state machine is formally specified in TLA+ and conformance-tested: all 11 valid edges accepted, all 70 invalid pairs rejected.{" "}
-            <a href="/#verification" className="link-dim">See verification →</a>
+            <Link href="/#verification" className="link-dim">See verification →</Link>
           </div>
         </div>
       </Reveal>
