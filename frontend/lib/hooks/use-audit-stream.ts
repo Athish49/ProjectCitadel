@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import type { AuditRow } from "@/lib/types/audit";
 
-const MAX_ROWS = 150;
+const MAX_ROWS = 300;
 
 export function useAuditStream() {
   const [rows,        setRows]        = useState<AuditRow[]>([]);
@@ -16,7 +16,11 @@ export function useAuditStream() {
   useEffect(() => {
     const es = new EventSource("/api/sse/audit");
 
-    es.addEventListener("open", () => setConnected(true));
+    es.addEventListener("open", () => {
+      setConnected(true);
+      setBackendDown(false);
+    });
+
     es.addEventListener("error", () => setConnected(false));
 
     es.addEventListener("backend_down", () => {
@@ -24,6 +28,19 @@ export function useAuditStream() {
       setConnected(false);
     });
 
+    // Bulk history batch (newest-first, already sorted by backend)
+    es.addEventListener("history", (e: MessageEvent) => {
+      setBackendDown(false);
+      if (pausedRef.current) return;
+      try {
+        const history = JSON.parse(e.data) as AuditRow[];
+        setRows(history.slice(0, MAX_ROWS));
+      } catch {
+        // ignore malformed events
+      }
+    });
+
+    // Live individual rows from DB polling — prepend to keep newest at top
     es.addEventListener("audit_row", (e: MessageEvent) => {
       setBackendDown(false);
       if (pausedRef.current) return;

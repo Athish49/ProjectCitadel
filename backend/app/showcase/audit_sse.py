@@ -26,11 +26,14 @@ _KEEPALIVE_SECS = 15.0  # send SSE keepalive comment if silent this long
 _AGENT_MAP: dict[str, str] = {
     "ingress": "ingress",
     "ingress_sanitiser": "ingress",
-    "parser": "parser",
-    "parser_llm": "parser",
-    "intake_parser": "parser",
+    "pattern_detection": "pattern_detection",
+    "semantic_classifier": "semantic_classifier",
+    "parser": "parser_llm",
+    "parser_llm": "parser_llm",
+    "intake_parser": "parser_llm",
     "orchestrator": "orchestrator",
-    "intake_actor": "intake_actor",
+    "intake_actor": "actor_llm",
+    "actor_llm": "actor_llm",
     "identity_verifier": "identity_verifier",
     "claims_processor": "claims_processor",
     "settlement_actor": "settlement_actor",
@@ -41,11 +44,16 @@ _AGENT_MAP: dict[str, str] = {
 }
 
 _EVENT_AGENT: dict[str, str] = {
-    "injection_detected": "ingress",
-    "sanitise":           "ingress",
-    "identity_fail_match": "identity_verifier",
-    "identity_lockout":    "identity_verifier",
-    "capability_violation": "tool_registry",
+    "injection_detected":           "ingress",
+    "sanitise":                     "ingress",
+    "injection_pattern_blocked":    "pattern_detection",
+    "adversarial_intent_blocked":   "semantic_classifier",
+    "schema_violation_blocked":     "parser_llm",
+    "egress_violation_blocked":     "egress_filter",
+    "pipeline_breach":              "orchestrator",
+    "identity_fail_match":          "identity_verifier",
+    "identity_lockout":             "identity_verifier",
+    "capability_violation":         "tool_registry",
 }
 
 _SEC_SEV: dict[str, str] = {"info": "info", "warn": "warn", "critical": "alert"}
@@ -168,6 +176,43 @@ async def _generate():
 
     try:
         await conn.set_autocommit(True)
+
+        async with conn.cursor(row_factory=dict_row) as cur:
+            # ── History batch ─────────────────────────────────────────────────
+            # Fetch recent rows from all 4 tables, merge, sort newest-first,
+            # and emit as a single 'history' event so the client sets state
+            # atomically — avoids per-row prepend which loses old rows when
+            # total > MAX_ROWS on the frontend.
+            history: list[dict] = []
+
+            await cur.execute(
+                "SELECT * FROM audit_log ORDER BY log_id DESC LIMIT 200"
+            )
+            for row in await cur.fetchall():
+                history.append(_fmt_audit_log(row))
+
+            await cur.execute(
+                "SELECT * FROM security_events ORDER BY ts DESC LIMIT 50"
+            )
+            for row in await cur.fetchall():
+                history.append(_fmt_security_event(row))
+
+            await cur.execute(
+                "SELECT * FROM identity_attempts ORDER BY ts DESC LIMIT 30"
+            )
+            for row in await cur.fetchall():
+                history.append(_fmt_identity_attempt(row))
+
+            await cur.execute(
+                "SELECT * FROM capability_token_log ORDER BY issued_at DESC LIMIT 30"
+            )
+            for row in await cur.fetchall():
+                history.append(_fmt_capability_token(row))
+
+            # Sort newest-first so the frontend can set rows directly and display
+            # them in chronological-descending order without a second sort pass.
+            history.sort(key=lambda r: r["ts"], reverse=True)
+            yield f"event: history\ndata: {json.dumps(history)}\n\n"
 
         # Initialise cursors to current state — only NEW rows will stream.
         # Use NOW() as the empty-table fallback; '-infinity' can't round-trip to Python datetime.

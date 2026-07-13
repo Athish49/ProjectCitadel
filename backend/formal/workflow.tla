@@ -3,9 +3,8 @@
 \* Derived from agent_system/orchestrator/transitions.py — _VALID_EDGES and
 \* _check_guard().  Sprint 5.2.1.
 \*
-\* To model-check with TLC:
-\*   tlc -config formal/workflow.cfg formal/workflow.tla
-\* (workflow.cfg is written in Sprint 5.2.2)
+\* Primary model checker: formal/check_spec.py (Python BFS — no TLC installation required).
+\* To run TLC directly: java -jar tla2tools.jar -config formal/workflow.cfg formal/workflow.tla
 \*
 \* Checked properties:
 \*   INVARIANT : TypeOK
@@ -324,6 +323,28 @@ ForwardProgress ==
 
 \* Under weak fairness every execution eventually closes the claim.
 EventualClosure == <>(stage = "CLOSED")
+
+\* ---------------------------------------------------------------------------
+\* Write-once integrity properties  (NIST SP 800-53 SI-7 / AU-9, PCI-DSS Req. 6)
+\* These formalise the monotonic-setter constraints in successors() of check_spec.py.
+\* ---------------------------------------------------------------------------
+
+\* Boolean guard flags are monotonically non-decreasing (FALSE → TRUE only).
+\* Prevents replay attacks that reset completed workflow steps.
+MonotonicFlags ==
+    [][ /\ (intake_complete     => intake_complete')
+        /\ (identity_verified   => identity_verified')
+        /\ (damage_assessed     => damage_assessed')
+        /\ (coverage_calculated => coverage_calculated')
+        /\ (complaint_captured  => complaint_captured') ]_vars
+
+\* Once the fraud score is set it is immutable.  Prevents score-laundering.
+FraudDecisionFinal ==
+    [][fraud_decision /= "NONE" => fraud_decision' = fraud_decision]_vars
+
+\* Once a settlement amount is proposed it is immutable.  Prevents mid-flight tampering.
+SettlementAmountFinal ==
+    [][settlement_amount /= 0 => settlement_amount' = settlement_amount]_vars
 
 =============================================================================
 \* Derived from transitions.py — Sprint 5.2.1

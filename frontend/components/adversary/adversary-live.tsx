@@ -16,7 +16,10 @@ function fmtTime(iso: string): string {
   try {
     const d = new Date(iso);
     const p = (n: number) => String(n).padStart(2, "0");
-    return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+    const month = p(d.getMonth() + 1);
+    const day   = p(d.getDate());
+    const year  = d.getFullYear();
+    return `${month}/${day}/${year} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
   } catch {
     return iso;
   }
@@ -31,17 +34,24 @@ function fmtRelative(iso: string | null): string {
 }
 
 function AttemptFeedRow({ attempt }: { attempt: AdversarialAttempt }) {
-  const isBreach = attempt.verdict === "EVADED_INGRESS";
+  const isBreach = attempt.pipeline_verdict === "BREACH";
   const isError  = attempt.verdict === "API_ERROR";
-  const outcomeLabel = isBreach ? "BREACH" : isError ? "ERROR" : "BLOCKED";
-  const outcomeColor = isBreach ? "#E5484D" : isError ? "#E2A336" : "#3ECF8E";
+  const outcomeLabel = attempt.pipeline_verdict ?? (isBreach ? "BREACH" : isError ? "ERROR" : "BLOCKED");
+  const outcomeColor = isBreach
+    ? "#E5484D"
+    : isError || attempt.pipeline_verdict === "PARTIAL"
+    ? "#E2A336"
+    : "#3ECF8E";
   const name = ATTACK_NAME[attempt.attack_id] ?? `Attack #${attempt.attack_id}`;
-  const layer = attempt.sanitizer_detections[0] ?? (isBreach ? "evaded_ingress" : "ingress_pass");
+  const layer =
+    attempt.blocked_by_layer ??
+    attempt.sanitizer_detections[0] ??
+    (isBreach ? "evaded_ingress" : "ingress_pass");
   const detail = attempt.sanitizer_detections.length > 0
     ? attempt.sanitizer_detections.join(", ")
     : isBreach
-    ? "no patterns detected — evaded"
-    : "clean pass";
+    ? "no patterns detected — evaded all 7 layers"
+    : "no patterns matched — blocked downstream";
 
   return (
     <div
@@ -82,32 +92,60 @@ function AttemptFeedRow({ attempt }: { attempt: AdversarialAttempt }) {
   );
 }
 
+function sourceTag(id: string): string {
+  if (id.startsWith("al-")) return "AL";
+  if (id.startsWith("se-")) return "SE";
+  if (id.startsWith("ct-")) return "CT";
+  if (id.startsWith("ia-")) return "IA";
+  return "??";
+}
+
 function AuditFeedRow({ row }: { row: AuditRow }) {
-  const sevColor = row.severity === "alert" ? "#E5484D"
-    : row.severity === "warn" ? "#E2A336"
-    : row.severity === "info" ? "#5BB5F2"
-    : "#3ECF8E";
+  // Blocked is always red regardless of severity — visitors shouldn't need to
+  // decode the severity-vs-outcome distinction.
+  const outcomeColor = row.outcome === "blocked" || row.outcome === "denied"
+    ? "#E5484D"
+    : row.outcome === "ok" || row.outcome === "verified" || row.outcome === "issued"
+    ? "#3ECF8E"
+    : "rgba(255,255,255,0.5)";
+
+  const src = sourceTag(row.id);
 
   return (
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: "60px 120px 1fr 80px",
+        gridTemplateColumns: "158px 72px 38px 110px 1fr 88px",
         gap: "10px",
         padding: "8px 18px",
         borderBottom: "1px solid rgba(255,255,255,0.04)",
         ...mono,
         fontSize: "11px",
         animation: "citadel-rowin 0.3s ease forwards",
+        alignItems: "center",
       }}
     >
       <span style={{ color: "rgba(255,255,255,0.3)" }}>{fmtTime(row.ts)}</span>
+      <span style={{ color: "rgba(255,255,255,0.28)", letterSpacing: "0.03em" }}>{row.traceId}</span>
+      <span
+        style={{
+          color: "rgba(255,255,255,0.32)",
+          background: "rgba(255,255,255,0.06)",
+          borderRadius: "3px",
+          padding: "1px 5px",
+          fontSize: "10px",
+          letterSpacing: "0.06em",
+          textAlign: "center",
+        }}
+      >
+        {src}
+      </span>
       <span style={{ color: "rgba(255,255,255,0.5)" }}>{row.agent}</span>
       <span style={{ color: "rgba(255,255,255,0.65)" }}>
         {row.action}
         {row.label ? <span style={{ color: "rgba(255,255,255,0.3)", marginLeft: "6px" }}>[{row.label}]</span> : null}
       </span>
-      <span style={{ textAlign: "right", color: sevColor, letterSpacing: "0.04em" }}>{row.outcome}</span>
+      <span style={{ textAlign: "right", color: outcomeColor, letterSpacing: "0.04em" }}>{row.outcome}</span>
     </div>
   );
 }
@@ -142,12 +180,14 @@ export function AdversaryLive() {
     attempts,
     breachCount,
     lastBreachAt,
+    totalAttempts,
     connected,
     backendDown,
     paused,
+    agentStatus,
+    lastSeenAt,
     togglePause,
     clear: clearAttempts,
-    totalAttempts,
   } = useAdversarialStream();
 
   const {
@@ -165,9 +205,6 @@ export function AdversaryLive() {
 
   const streamColor = paused ? "rgba(255,255,255,0.4)" : "#3ECF8E";
 
-  const agentStatus      = backendDown ? "OFFLINE" : connected ? "LIVE" : "CONNECTING";
-  const agentStatusColor = backendDown ? "#E5484D" : connected ? "#3ECF8E" : "rgba(255,255,255,0.4)";
-
   const focusCatName = useMemo(() => {
     if (attempts.length === 0) return null;
     const latest = attempts[0];
@@ -175,7 +212,27 @@ export function AdversaryLive() {
     return row ? `${row.catShort} attacks` : null;
   }, [attempts]);
 
-  const feedUnavailable = backendDown && attempts.length === 0;
+  // backendDown = SSE unreachable; agentStatus = DB-sourced liveness of the agent
+  const displayStatus      = backendDown ? "OFFLINE" : agentStatus;
+  const agentStatusColor   = backendDown
+    ? "#E5484D"
+    : agentStatus === "LIVE"
+    ? "#3ECF8E"
+    : agentStatus === "OFFLINE"
+    ? "#E2A336"
+    : "rgba(255,255,255,0.4)";
+
+  const agentSubtext = backendDown
+    ? "backend not reachable"
+    : agentStatus === "LIVE"
+    ? (focusCatName ? `focused on ${focusCatName}` : "awaiting first attempt")
+    : agentStatus === "OFFLINE"
+    ? (lastSeenAt ? `last seen ${fmtRelative(lastSeenAt)}` : "no activity recorded")
+    : "awaiting first attempt";
+
+  // feedUnavailable only when the SSE connection itself is broken; historical data
+  // from DB is shown even when the agent is offline.
+  const feedUnavailable  = backendDown && attempts.length === 0;
   const auditUnavailable = auditBackendDown && auditRows.length === 0;
 
   return (
@@ -208,7 +265,7 @@ export function AdversaryLive() {
             {backendDown ? "—" : totalAttempts.toLocaleString("en-US")}
           </div>
           <div style={{ fontSize: "12.5px", color: "rgba(255,255,255,0.38)" }}>
-            {backendDown ? "waiting for backend" : "this session"}
+            {backendDown ? "waiting for backend" : "all time"}
           </div>
         </div>
 
@@ -229,7 +286,7 @@ export function AdversaryLive() {
             {backendDown ? "—" : breachCount}
           </div>
           <div style={{ fontSize: "12.5px", color: "rgba(255,255,255,0.38)" }}>
-            {backendDown ? "waiting for backend" : lastBreachAt ? `last: ${fmtRelative(lastBreachAt)}` : "none detected"}
+            {backendDown ? "waiting for backend" : lastBreachAt ? `last: ${fmtRelative(lastBreachAt)}` : "none recorded"}
           </div>
         </div>
 
@@ -245,14 +302,14 @@ export function AdversaryLive() {
                 height: "9px",
                 borderRadius: "50%",
                 background: agentStatusColor,
-                animation: connected && !backendDown ? "citadel-pulse 2.2s ease-in-out infinite" : "none",
+                animation: agentStatus === "LIVE" && !backendDown ? "citadel-pulse 2.2s ease-in-out infinite" : "none",
                 flexShrink: 0,
               }}
             />
-            {agentStatus}
+            {displayStatus}
           </div>
           <div style={{ fontSize: "12.5px", color: "rgba(255,255,255,0.38)" }}>
-            {backendDown ? "backend not reachable" : focusCatName ? `focused on ${focusCatName}` : "awaiting first attempt"}
+            {agentSubtext}
           </div>
         </div>
       </div>
@@ -274,13 +331,15 @@ export function AdversaryLive() {
             width: "6px",
             height: "6px",
             borderRadius: "50%",
-            background: backendDown ? "#E5484D" : connected ? "#3ECF8E" : "rgba(255,255,255,0.3)",
-            animation: connected && !backendDown ? "citadel-pulse 2.2s ease-in-out infinite" : "none",
+            background: backendDown ? "#E5484D" : agentStatus === "LIVE" ? "#3ECF8E" : agentStatus === "OFFLINE" ? "#E2A336" : "rgba(255,255,255,0.3)",
+            animation: agentStatus === "LIVE" && !backendDown ? "citadel-pulse 2.2s ease-in-out infinite" : "none",
             flexShrink: 0,
           }}
         />
         {backendDown
           ? "SYSTEM: BACKEND UNAVAILABLE — /sse/adversarial unreachable · retrying"
+          : agentStatus === "OFFLINE"
+          ? `SYSTEM: AGENT OFFLINE — historical data from postgres · last seen ${lastSeenAt ? fmtRelative(lastSeenAt) : "never"}`
           : `SYSTEM: ${connected ? "LIVE" : "CONNECTING"} — telemetry from /sse/adversarial · sandboxed instance only, never the live showcase`}
       </div>
 
@@ -291,7 +350,7 @@ export function AdversaryLive() {
           display: "grid",
           gridTemplateColumns: "1fr 360px",
           gap: "20px",
-          alignItems: "stretch",
+          alignItems: "start",
           marginTop: "64px",
         }}
       >
@@ -299,13 +358,12 @@ export function AdversaryLive() {
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: "#E5484D", flexShrink: 0 }} />
-              <span style={{ fontSize: "13px", fontWeight: 600, letterSpacing: "0.06em", color: "rgba(255,255,255,0.85)", textTransform: "uppercase" }}>
+              <span style={{ fontSize: "13px", fontWeight: 600, letterSpacing: "0.06em", color: "#E5484D", textTransform: "uppercase" }}>
                 Attacker&apos;s View
               </span>
             </div>
-            <div style={{ marginTop: "4px", paddingLeft: "15px", fontSize: "12px", color: "rgba(255,255,255,0.35)" }}>
-              Every attack attempt the adversarial agent fires — blocked or evaded
+            <div style={{ marginTop: "4px", paddingLeft: "0px", fontSize: "12px", color: "rgba(255,255,255,0.35)" }}>
+              Every attack attempt the adversarial agent fires through all 7 pipeline layers — blocked or breached
             </div>
           </div>
         <div
@@ -314,7 +372,7 @@ export function AdversaryLive() {
             background: "#0C0D0F",
             display: "flex",
             flexDirection: "column",
-            flex: 1,
+            maxHeight: "560px",
           }}
         >
           {/* Feed header */}
@@ -375,8 +433,8 @@ export function AdversaryLive() {
             </div>
           </div>
 
-          {/* Feed body — fills remaining height */}
-          <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column" }}>
+          {/* Feed body — capped height with scroll */}
+          <div style={{ flex: 1, minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column" }}>
             {feedUnavailable ? (
               <UnavailableMessage label="/sse/adversarial" />
             ) : attempts.length === 0 ? (
@@ -401,7 +459,7 @@ export function AdversaryLive() {
             }}
           >
             <div style={{ ...mono, fontSize: "11px", letterSpacing: "0.1em", color: "rgba(255,255,255,0.4)" }}>
-              MONTHLY COST — CLAUDE HAIKU 4.5
+              MONTHLY COST — CLAUDE SONNET 4.6
             </div>
             <div style={{ display: "flex", alignItems: "baseline", gap: "8px", marginTop: "12px" }}>
               <span style={{ ...mono, fontSize: "30px", fontWeight: 600, color: backendDown ? "rgba(255,255,255,0.3)" : spendColor }}>
@@ -430,7 +488,9 @@ export function AdversaryLive() {
               />
             </div>
             <div style={{ fontSize: "12px", color: "rgba(255,255,255,0.42)", marginTop: "12px", lineHeight: 1.55 }}>
-              Hard cap enforced by P11 (Token &amp; Cost Budgets). ~$0.006 per attempt. A circuit breaker halts the agent outright on exhaustion — it does not silently degrade.
+              Hard cap enforced by P11 (Token &amp; Cost Budgets). <br />
+              A circuit breaker halts the agent outright on exhaustion. <br />
+              ~$0.006 per attempt.
             </div>
           </div>
 
@@ -450,9 +510,9 @@ export function AdversaryLive() {
             </span>
             <div style={{ display: "flex", flexDirection: "column", gap: "10px", fontSize: "13px" }}>
               {[
-                { label: "Model",     value: "Claude Haiku 4.5",                                    mono: true  },
-                { label: "Isolation", value: "Separate container, sandboxed test instance only",    mono: false },
-                { label: "Reaches",   value: "Adversarial-test API only — never the live showcase", mono: false },
+                { label: "Model",     value: "Claude Sonnet 4.6",                                   mono: true  },
+                { label: "Isolation", value: "Separate container, sandboxed",    mono: false },
+                { label: "Reaches",   value: "Adversarial-test API only", mono: false },
               ].map(({ label, value, mono: isMono }) => (
                 <div key={label} style={{ display: "flex", justifyContent: "space-between", gap: "10px" }}>
                   <span style={{ color: "rgba(255,255,255,0.42)", flexShrink: 0 }}>{label}</span>
@@ -478,11 +538,25 @@ export function AdversaryLive() {
                 color: "rgba(255,255,255,0.5)",
               }}
             >
-              Rotates through the taxonomy category by category; mutates payloads using feedback from blocked vs. partially-leaked outcomes. The strategy is open-source and displayed verbatim — no proprietary technique withheld.
+              Rotates through all the 79 attack categories. <br />
+              Each payload traverses the entire defense pipeline. <br />
+              A breach requires evading all 7 layers. 
             </div>
-            <div style={{ ...mono, fontSize: "11.5px", color: "rgba(255,255,255,0.38)" }}>
+            <a
+              href="https://github.com/Athish49/ProjectCitadel/blob/main/backend/adversarial_agent/strategy.py"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="link-dim"
+              style={{
+                ...mono,
+                fontSize: "11.5px",
+                textDecoration: "underline",
+                textDecorationColor: "rgba(255,255,255,0.2)",
+                textUnderlineOffset: "3px",
+              }}
+            >
               adversarial/strategy.py:1
-            </div>
+            </a>
           </div>
 
           {/* Testing now */}
@@ -502,7 +576,7 @@ export function AdversaryLive() {
                 TESTING NOW
               </div>
               <div style={{ fontSize: "15px", fontWeight: 600, color: "rgba(255,255,255,0.92)", marginTop: "6px" }}>
-                {backendDown ? "—" : (focusCatName ?? "awaiting data")}
+                {backendDown ? "—" : agentStatus === "OFFLINE" ? "agent offline" : (focusCatName ?? "awaiting data")}
               </div>
             </div>
             <span
@@ -511,7 +585,7 @@ export function AdversaryLive() {
                 height: "8px",
                 borderRadius: "50%",
                 background: agentStatusColor,
-                animation: connected && !backendDown ? "citadel-pulse 2.2s ease-in-out infinite" : "none",
+                animation: agentStatus === "LIVE" && !backendDown ? "citadel-pulse 2.2s ease-in-out infinite" : "none",
                 flexShrink: 0,
               }}
             />
@@ -523,12 +597,11 @@ export function AdversaryLive() {
       <div style={{ marginTop: "48px" }}>
         <div style={{ marginBottom: "12px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: "#3ECF8E", flexShrink: 0 }} />
-            <span style={{ fontSize: "13px", fontWeight: 600, letterSpacing: "0.06em", color: "rgba(255,255,255,0.85)", textTransform: "uppercase" }}>
+            <span style={{ fontSize: "13px", fontWeight: 600, letterSpacing: "0.06em", color: "#3ECF8E", textTransform: "uppercase" }}>
               Defender&apos;s View
             </span>
           </div>
-          <div style={{ marginTop: "4px", paddingLeft: "15px", fontSize: "12px", color: "rgba(255,255,255,0.35)" }}>
+          <div style={{ marginTop: "4px", paddingLeft: "0px", fontSize: "12px", color: "rgba(255,255,255,0.35)" }}>
             Real-time audit trail — every agent action, tool call, and security event across the pipeline
           </div>
         </div>
@@ -600,7 +673,7 @@ export function AdversaryLive() {
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "60px 120px 1fr 80px",
+                gridTemplateColumns: "158px 72px 38px 110px 1fr 88px",
                 gap: "10px",
                 padding: "8px 18px",
                 borderBottom: "1px solid rgba(255,255,255,0.05)",
@@ -611,6 +684,8 @@ export function AdversaryLive() {
               }}
             >
               <span>TIME</span>
+              <span>TRACE</span>
+              <span>SRC</span>
               <span>AGENT</span>
               <span>ACTION · LABEL</span>
               <span style={{ textAlign: "right" }}>OUTCOME</span>

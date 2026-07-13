@@ -49,7 +49,7 @@ export default function AdversaryPage() {
               color: "rgba(255,255,255,0.97)",
             }}
           >
-            An autonomous attacker is running right now.
+            An autonomous Red Team is attacking right now.
           </h1>
 
           {/* Dynamic content: stats + feed + sidebar */}

@@ -106,10 +106,11 @@ def _seed_claim(
     *,
     fraud_decision: str = "CLEAR",
     has_bank_account: bool = True,
-) -> tuple[str, str]:
-    """Insert customer, policy, pii_vault, claim, and fraud_scores rows.
+) -> tuple[str, str, str]:
+    """Insert customer, policy, pii_vault, claim, fraud_scores, and evidence rows.
 
-    Returns (customer_id, policy_id) for use in teardown.
+    Returns (customer_id, policy_id, evidence_id) for use in teardown and
+    for threading the real evidence UUID through the actor pipeline.
 
     NOTE: Uses the postgres superuser connection which bypasses column-level
     grants and RLS.  The role_settlement_actor pii_vault grant restriction is
@@ -117,6 +118,7 @@ def _seed_claim(
     """
     customer_id = str(uuid.uuid4())
     policy_id = str(uuid.uuid4())
+    evidence_id = str(uuid.uuid4())
     short = claim_id[:8]
 
     cur.execute(
@@ -125,8 +127,10 @@ def _seed_claim(
         " VALUES (%s, %s, 'Test', 'User', %s, '1985-01-01')",
         (customer_id, f"POL-{short}", f"{short}@test.invalid"),
     )
+    # policy_bind_date must be well before incident_date so fast_claim=False in score_fraud.
     cur.execute(
-        "INSERT INTO policies (policy_id, policy_number, customer_id) VALUES (%s, %s, %s)",
+        "INSERT INTO policies (policy_id, policy_number, customer_id, policy_bind_date)"
+        " VALUES (%s, %s, %s, '2020-01-01')",
         (policy_id, f"POL-{short}", customer_id),
     )
     bank_enc = b"\xde\xad\xbe\xef" if has_bank_account else None
@@ -135,16 +139,28 @@ def _seed_claim(
         " VALUES (%s, %s, '1234', %s)",
         (customer_id, b"\x00" * 32, bank_enc),
     )
+    # total_claim_amount drives score_fraud outcome (matches fraud_decision parameter).
+    # CLEAR: amount <= 20_000; FLAG: 20_001 < amount <= 40_000.
+    claim_amount = "25000.00" if fraud_decision == "FLAG" else "5000.00"
     cur.execute(
-        "INSERT INTO claims (claim_id, claim_number, customer_id, policy_id, claim_stage)"
-        " VALUES (%s, %s, %s, %s, 'INTAKE')",
-        (claim_id, f"CLM-{short}", customer_id, policy_id),
+        "INSERT INTO claims"
+        " (claim_id, claim_number, customer_id, policy_id, claim_stage,"
+        "  total_claim_amount, incident_date)"
+        " VALUES (%s, %s, %s, %s, 'INTAKE', %s, '2022-06-01')",
+        (claim_id, f"CLM-{short}", customer_id, policy_id, claim_amount),
     )
     cur.execute(
         "INSERT INTO fraud_scores (claim_id, risk_score, decision) VALUES (%s, %s, %s)",
         (claim_id, 10 if fraud_decision == "CLEAR" else 50, fraud_decision),
     )
-    return customer_id, policy_id
+    cur.execute(
+        "INSERT INTO evidence"
+        " (evidence_id, claim_id, evidence_type, sanitisation_status,"
+        "  extracted_text_label, damage_classification)"
+        " VALUES (%s, %s, 'PHOTO', 'CLEAN', 'UNTRUSTED', 'minor_dent')",
+        (evidence_id, claim_id),
+    )
+    return customer_id, policy_id, evidence_id
 
 
 def _teardown_claim(
@@ -154,6 +170,7 @@ def _teardown_claim(
     policy_id: str,
 ) -> None:
     with conn.cursor() as cur:
+        cur.execute("DELETE FROM evidence WHERE claim_id = %s", (claim_id,))
         cur.execute("DELETE FROM settlements WHERE claim_id = %s", (claim_id,))
         cur.execute("DELETE FROM fraud_scores WHERE claim_id = %s", (claim_id,))
         cur.execute("DELETE FROM claims WHERE claim_id = %s", (claim_id,))
@@ -239,12 +256,12 @@ def _settlement_tokens(
 # ---------------------------------------------------------------------------
 
 
-def _processor_mock(cid: str) -> MagicMock:
+def _processor_mock(cid: str, evidence_id: str) -> MagicMock:
     """Mock: call classify_damage + lookup_coverage + score_fraud then end."""
     return _mock_client(
         _response(
             [
-                _tool_block("classify_damage", {"evidence_ref": f"ev-{cid[:8]}"}),
+                _tool_block("classify_damage", {"evidence_ref": evidence_id}),
                 _tool_block("lookup_coverage", {"claim_id": cid}),
                 _tool_block("score_fraud", {"claim_id": cid}),
             ],
@@ -310,6 +327,7 @@ def _run_pipeline(
     conn: psycopg.Connection,
     cid: str,
     *,
+    evidence_id: str,
     processor_mock: MagicMock,
     settlement_mock: MagicMock | None,
     km: KeypairManager,
@@ -339,7 +357,7 @@ def _run_pipeline(
     # ── Claims processor (real ToolRegistry + DB, mocked LLM) ────────────────
     proc_env = run_claims_processor_actor(
         claim_id=cid,
-        evidence_ref=f"ev-{cid[:8]}",
+        evidence_ref=evidence_id,
         pre_issued_tokens=_processor_tokens(km, conn),
         orchestrator_public_key=pub,
         client=processor_mock,
@@ -442,13 +460,14 @@ def test_settled_pipeline(idx: int) -> None:
     policy_id: str | None = None
     try:
         with conn.cursor() as cur:
-            customer_id, policy_id = _seed_claim(cur, cid)
+            customer_id, policy_id, evidence_id = _seed_claim(cur, cid)
         conn.commit()
 
         _, envelope = _run_pipeline(
             conn,
             cid,
-            processor_mock=_processor_mock(cid),
+            evidence_id=evidence_id,
+            processor_mock=_processor_mock(cid, evidence_id),
             settlement_mock=_settlement_mock_settled(cid),
             km=km,
             session_id=session_id,
@@ -492,13 +511,14 @@ def test_amount_escalated_pipeline() -> None:
     policy_id: str | None = None
     try:
         with conn.cursor() as cur:
-            customer_id, policy_id = _seed_claim(cur, cid, has_bank_account=False)
+            customer_id, policy_id, evidence_id = _seed_claim(cur, cid, has_bank_account=False)
         conn.commit()
 
         _, envelope = _run_pipeline(
             conn,
             cid,
-            processor_mock=_processor_mock(cid),
+            evidence_id=evidence_id,
+            processor_mock=_processor_mock(cid, evidence_id),
             settlement_mock=_settlement_mock_amount_esc(cid),
             km=km,
             session_id=session_id,
@@ -528,13 +548,14 @@ def test_fraud_escalated_pipeline() -> None:
         with conn.cursor() as cur:
             # fraud_decision in DB is set to FLAG for consistency; the
             # claims processor itself uses the hash-based score_fraud() tool.
-            customer_id, policy_id = _seed_claim(cur, cid, fraud_decision="FLAG")
+            customer_id, policy_id, evidence_id = _seed_claim(cur, cid, fraud_decision="FLAG")
         conn.commit()
 
         proc_env, settlement_env = _run_pipeline(
             conn,
             cid,
-            processor_mock=_processor_mock(cid),
+            evidence_id=evidence_id,
+            processor_mock=_processor_mock(cid, evidence_id),
             settlement_mock=None,
             km=km,
             session_id=session_id,

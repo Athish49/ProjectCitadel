@@ -13,13 +13,14 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
 import anthropic
 import httpx
+
+from app.config import cfg
 
 log = logging.getLogger(__name__)
 
@@ -200,8 +201,8 @@ def _from_oai_response(response: Any) -> _FakeMessage:
 
 def _check_ollama() -> tuple[bool, str]:
     """Return (is_available, model_name). Logs a warning if model not found in /api/tags."""
-    host = os.environ.get("OLLAMA_HOST", _OLLAMA_DEFAULT_HOST).rstrip("/")
-    model = os.environ.get("OLLAMA_MODEL", _OLLAMA_DEFAULT_MODEL)
+    host = cfg.ollama_host.rstrip("/")
+    model = cfg.ollama_model
 
     try:
         resp = httpx.get(f"{host}/api/tags", timeout=2.0)
@@ -236,23 +237,20 @@ def detect_provider() -> tuple[Provider, str, str | None]:
     # Priority 1: Ollama — always preferred; free and local
     ollama_ok, ollama_model = _check_ollama()
     if ollama_ok:
-        host = os.environ.get("OLLAMA_HOST", _OLLAMA_DEFAULT_HOST).rstrip("/")
-        return Provider.OLLAMA, ollama_model, host
+        return Provider.OLLAMA, ollama_model, cfg.ollama_host.rstrip("/")
 
     # Priority 2: Google
-    google_key = os.environ.get("GOOGLE_API_KEY", "").strip()
+    google_key = cfg.google_api_key.strip()
     if google_key:
-        model = os.environ.get("GOOGLE_MODEL", _GOOGLE_DEFAULT_MODEL)
-        return Provider.GOOGLE, model, google_key
+        return Provider.GOOGLE, cfg.google_model, google_key
 
     # Priority 3: Groq
-    groq_key = os.environ.get("GROQ_API_KEY", "").strip()
+    groq_key = cfg.groq_api_key.strip()
     if groq_key:
-        model = os.environ.get("GROQ_MODEL", _GROQ_DEFAULT_MODEL)
-        return Provider.GROQ, model, groq_key
+        return Provider.GROQ, cfg.groq_model, groq_key
 
     # Priority 4: Anthropic
-    anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    anthropic_key = cfg.anthropic_api_key.strip()
     if not anthropic_key:
         raise RuntimeError(
             "No LLM provider available. Set one of: OLLAMA_HOST (run Ollama locally), "
@@ -266,7 +264,7 @@ def detect_provider() -> tuple[Provider, str, str | None]:
 
 def _build_oai_client(provider: Provider, key: str | None) -> Any:
     from openai import OpenAI
-    host = os.environ.get("OLLAMA_HOST", _OLLAMA_DEFAULT_HOST).rstrip("/")
+    host = cfg.ollama_host.rstrip("/")
 
     if provider == Provider.OLLAMA:
         return OpenAI(base_url=f"{host}/v1", api_key="ollama")

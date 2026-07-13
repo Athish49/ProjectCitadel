@@ -25,6 +25,7 @@ from agent_system.tools.capability_tokens import CapabilityToken, issue_token
 from app.db import get_dsn
 from app.model_provider import get_async_client, get_sync_client
 from app.showcase.trace_store import get as _get_trace
+from audit.chain import append_log
 
 log = logging.getLogger(__name__)
 
@@ -169,6 +170,55 @@ def _run_egress_sync(output_text: str, trace_id: str) -> dict:
     }
 
 
+# ── Audit helper ─────────────────────────────────────────────────────────────
+
+async def _audit_layer(
+    trace_id: str,
+    agent_id: str,
+    action: str,
+    details: dict,
+    security_event: bool = False,
+) -> None:
+    """Write a pipeline-layer outcome to audit_log. Fire-and-forget via create_task."""
+    def _sync() -> None:
+        try:
+            dsn = get_dsn()
+        except RuntimeError:
+            return
+        try:
+            with psycopg.connect(dsn, autocommit=False) as conn:
+                append_log(
+                    conn,
+                    agent_id=agent_id,
+                    action=action,
+                    target=f"trace:{trace_id[:8]}",
+                    data_label="UNTRUSTED",
+                    trace_id=uuid.UUID(trace_id),
+                    details=details,
+                    security_event=security_event,
+                )
+                if security_event:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            INSERT INTO security_events
+                                (trace_id, event_type, severity, details)
+                            VALUES (%s, %s, %s, %s::jsonb)
+                            """,
+                            (
+                                uuid.UUID(trace_id),
+                                action,
+                                "critical" if action == "pipeline_breach" else "warn",
+                                json.dumps(details),
+                            ),
+                        )
+                conn.commit()
+        except Exception as exc:
+            log.warning("layer_audit_failed trace=%s agent=%s error=%s", trace_id[:8], agent_id, exc)
+
+    await asyncio.to_thread(_sync)
+
+
 # ── Pipeline generator ────────────────────────────────────────────────────────
 
 async def _generate_pipeline(trace_id: str) -> AsyncGenerator[str, None]:
@@ -227,6 +277,10 @@ async def _generate_pipeline(trace_id: str) -> AsyncGenerator[str, None]:
                      (time.monotonic() - t0) * 1000, pattern_events)
 
     if pattern_status == "blocked":
+        asyncio.create_task(_audit_layer(
+            trace_id, "pattern_detection", "injection_pattern_blocked",
+            {"patterns": semantic_detections}, security_event=True,
+        ))
         yield _sse_verdict(trace_id, "BLOCKED", blocked_by_pattern, blocked_by_layer,
                            f"Attack blocked at pattern detection: {', '.join(semantic_detections)}.")
         return
@@ -257,6 +311,10 @@ async def _generate_pipeline(trace_id: str) -> AsyncGenerator[str, None]:
                      (time.monotonic() - t0) * 1000, sem_events)
 
     if sem_status == "blocked":
+        asyncio.create_task(_audit_layer(
+            trace_id, "semantic_classifier", "adversarial_intent_blocked",
+            {"intent": intent, "confidence": round(sem_confidence, 2)}, security_event=True,
+        ))
         yield _sse_verdict(trace_id, "BLOCKED", blocked_by_pattern, blocked_by_layer,
                            f"Attack blocked by semantic classifier: adversarial intent at {sem_confidence:.0%} confidence.")
         return
@@ -306,6 +364,11 @@ async def _generate_pipeline(trace_id: str) -> AsyncGenerator[str, None]:
                      (time.monotonic() - t0) * 1000, parser_events)
 
     if parser_status == "blocked":
+        asyncio.create_task(_audit_layer(
+            trace_id, "parser_llm", "schema_violation_blocked",
+            {"reason": parser_events[-1]["message"] if parser_events else "schema_violation"},
+            security_event=True,
+        ))
         yield _sse_verdict(trace_id, "BLOCKED", blocked_by_pattern, blocked_by_layer,
                            "Attack caused parser schema violation — quarantine boundary held.")
         return
@@ -375,6 +438,11 @@ async def _generate_pipeline(trace_id: str) -> AsyncGenerator[str, None]:
 
     # ── Final Verdict ─────────────────────────────────────────────────────────
     if egress_status == "blocked":
+        asyncio.create_task(_audit_layer(
+            trace_id, "egress_filter", "egress_violation_blocked",
+            {"violations": [e["message"] for e in egress_result["events"] if e.get("severity") == "alert"]},
+            security_event=True,
+        ))
         final_outcome = "BLOCKED"
         final_summary = "Output blocked at egress filter: violation detected in actor response."
     elif actor_status == "partial":
@@ -382,8 +450,12 @@ async def _generate_pipeline(trace_id: str) -> AsyncGenerator[str, None]:
         actor_desc = envelope.outcome.replace("_", " ") if envelope else "unknown"
         final_summary = f"Intake processing incomplete: {actor_desc}."
     elif attack_signal:
+        asyncio.create_task(_audit_layer(
+            trace_id, "orchestrator", "pipeline_breach",
+            {"layers_passed": 7, "attack_signal": True}, security_event=True,
+        ))
         final_outcome = "BREACH"
-        final_summary = "⚠️ Adversarial input evaded all 7 defense layers."
+        final_summary = "Adversarial input evaded all 7 defense layers."
     else:
         final_outcome = "CLEAN"
         final_summary = "Input processed cleanly through all 7 defense layers."

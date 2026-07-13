@@ -64,7 +64,7 @@ export function AdversarySection() {
       >
         <span style={{ color: "rgba(255,255,255,0.97)" }}>An autonomous attacker is running right now.</span>
         <span style={{ color: "rgba(255,255,255,0.42)" }}>
-          {" "}A sandboxed agent rotates through the taxonomy, mutates payloads on feedback, and streams every attempt here — including the ones that got through.
+          {" "}A sandboxed agent rotates through the taxonomy, mutates payloads on feedback, and streams every attempt here — including any that breach all 7 defense layers.
         </span>
       </Reveal>
 
@@ -201,7 +201,7 @@ export function AdversarySection() {
               3
             </div>
             <div style={{ fontSize: "12.5px", color: "rgba(255,255,255,0.45)", marginTop: "6px", lineHeight: 1.5 }}>
-              Each one opened a GitHub issue, got a patch, and is documented in the register. This counter is never edited.
+              Each one is documented in the breach register. This counter is never edited.
             </div>
           </div>
 
