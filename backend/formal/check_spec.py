@@ -1,10 +1,13 @@
 """Exhaustive BFS model-checker for workflow.tla — Sprint 5.2.2.
 
-Verifies all reachable states against four invariants derived from the spec:
-  TypeOK           — all variables stay in their declared domains
-  ClosedIsAbsorbing — stage="CLOSED" never transitions to a different stage
-  ForwardProgress  — every stage change strictly increases topological rank
-  EventualClosure  — every reachable state can reach stage="CLOSED"
+Verifies all reachable states against seven invariants derived from the spec:
+  TypeOK               — all variables stay in their declared domains
+  ClosedIsAbsorbing    — stage="CLOSED" never transitions to a different stage
+  ForwardProgress      — every stage change strictly increases topological rank
+  EventualClosure      — every reachable state can reach stage="CLOSED"
+  MonotonicFlags       — boolean guard flags may only flip FALSE→TRUE
+  FraudDecisionFinal   — fraud_decision is immutable once set from "NONE"
+  SettlementAmountFinal — settlement_amount is immutable once set from 0
 
 Run standalone:
   python formal/check_spec.py
@@ -178,6 +181,31 @@ def check_forward_progress(s: WorkflowState, s2: WorkflowState) -> str | None:
     return None
 
 
+def check_monotonic_flags(s: WorkflowState, s2: WorkflowState) -> str | None:
+    """Boolean guard flags may only flip FALSE→TRUE; any reversal violates write-once integrity."""
+    for field in (
+        "intake_complete", "identity_verified", "damage_assessed",
+        "coverage_calculated", "complaint_captured",
+    ):
+        if getattr(s, field) and not getattr(s2, field):
+            return f"MonotonicFlags violated: {field} flipped TRUE→FALSE"
+    return None
+
+
+def check_fraud_decision_final(s: WorkflowState, s2: WorkflowState) -> str | None:
+    """Once fraud_decision leaves NONE it must not change — the score is immutable."""
+    if s.fraud_decision != "NONE" and s2.fraud_decision != s.fraud_decision:
+        return f"FraudDecisionFinal violated: {s.fraud_decision!r} → {s2.fraud_decision!r}"
+    return None
+
+
+def check_settlement_amount_final(s: WorkflowState, s2: WorkflowState) -> str | None:
+    """Once settlement_amount is set from 0 it must not change — the offer is immutable."""
+    if s.settlement_amount != 0 and s2.settlement_amount != s.settlement_amount:
+        return f"SettlementAmountFinal violated: {s.settlement_amount} → {s2.settlement_amount}"
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Main BFS checker
 # ---------------------------------------------------------------------------
@@ -208,6 +236,12 @@ def check_spec() -> dict:
             if err := check_closed_is_absorbing(s, s2):
                 violations.append(err)
             if err := check_forward_progress(s, s2):
+                violations.append(err)
+            if err := check_monotonic_flags(s, s2):
+                violations.append(err)
+            if err := check_fraud_decision_final(s, s2):
+                violations.append(err)
+            if err := check_settlement_amount_final(s, s2):
                 violations.append(err)
 
             reverse[s2].add(s)

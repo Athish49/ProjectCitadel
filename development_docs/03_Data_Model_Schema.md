@@ -351,7 +351,7 @@ Step 4: ASSIGN 1–3 damage images per claim from CarDD (data/assign_images.py)
 Step 5: HAND-CRAFT PDFs (manual; lives in data/seeds/pdfs/)
 Step 6: HAND-WRITE RAG corpus (manual; lives in data/seeds/rag/)
 Step 7: BUILD attack payload corpus (data/attack_payloads/; see Doc 04 §3)
-Step 8: LOAD into Postgres + ChromaDB via make seed
+Step 8: LOAD into Postgres via make seed + Qdrant via make ingest
 ```
 
 **Removed entirely:** Bitext intents (we have no intent classifier), Motor Vehicle Portfolio expansion (we have no policy lifecycle simulator), Vehicle Claim Fraud Detection expansion (we have no XGBoost model), 200 generated police reports (overkill), 200 generated estimates (overkill).
@@ -383,10 +383,10 @@ The Console is explicit about which paths are stubbed and why ("the fraud model 
 ### 6.1 Three-tier isolation
 
 ```
-ChromaDB instance
-├── collection: public_faq       (PUBLIC, all-MiniLM-L6-v2, ~10 docs)
-├── collection: policy_docs      (CONFIDENTIAL, ~10 docs)
-└── collection: fraud_rules      (SECRET, ~5 docs, dedicated credential)
+Qdrant (cloud)
+├── ProjectCitadel-public_faq    (PUBLIC, BAAI/bge-small-en-v1.5, ~10 docs)
+├── ProjectCitadel-policy_docs   (CONFIDENTIAL, ~10 docs)
+└── ProjectCitadel-fraud_rules   (SECRET, ~8 docs, dedicated credential)
 ```
 
 Each collection is fronted by a separate retriever function. The retriever:

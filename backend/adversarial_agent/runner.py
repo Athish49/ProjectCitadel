@@ -25,14 +25,16 @@ import httpx
 from config import (
     AGENT_ID,
     ANTHROPIC_API_KEY,
-    HAIKU_INPUT_COST_PER_1K,
-    HAIKU_OUTPUT_COST_PER_1K,
+    DATABASE_URL,
+    INPUT_COST_PER_1K,
+    OUTPUT_COST_PER_1K,
     LOG_LEVEL,
     LOOP_INTERVAL_SECONDS,
     MAX_ATTEMPTS,
     MODEL,
     MONTHLY_SPEND_CAP_USD,
     SPEND_LEDGER_PATH,
+    SSE_TIMEOUT_SECONDS,
     TARGET_API_URL,
 )
 from spend import SpendLedger
@@ -108,8 +110,8 @@ def main() -> None:
 
     ledger = SpendLedger(
         cap_usd=MONTHLY_SPEND_CAP_USD,
-        input_cost_per_1k=HAIKU_INPUT_COST_PER_1K,
-        output_cost_per_1k=HAIKU_OUTPUT_COST_PER_1K,
+        input_cost_per_1k=INPUT_COST_PER_1K,
+        output_cost_per_1k=OUTPUT_COST_PER_1K,
         ledger_path=SPEND_LEDGER_PATH,
     )
     if ledger.tripped:
@@ -121,7 +123,13 @@ def main() -> None:
         sys.exit(1)
 
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-    strategy = AttackStrategy(client=client, max_attempts=MAX_ATTEMPTS, ledger=ledger)
+    strategy = AttackStrategy(
+        client=client,
+        max_attempts=MAX_ATTEMPTS,
+        ledger=ledger,
+        sse_timeout=SSE_TIMEOUT_SECONDS,
+        database_url=DATABASE_URL,
+    )
     session_id = str(uuid.uuid4())
 
     log.info(

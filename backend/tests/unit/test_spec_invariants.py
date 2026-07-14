@@ -10,6 +10,7 @@ Runs formal/check_spec.py's BFS exhaustively and asserts:
 from __future__ import annotations
 
 import pytest
+from dataclasses import replace
 
 from formal.check_spec import (
     AMOUNT_DOMAIN,
@@ -21,6 +22,9 @@ from formal.check_spec import (
     check_spec,
     check_closed_is_absorbing,
     check_forward_progress,
+    check_fraud_decision_final,
+    check_monotonic_flags,
+    check_settlement_amount_final,
     check_type_ok,
     successors,
 )
@@ -124,6 +128,51 @@ class TestEventualClosure:
             fraud_decision="CLEAR", settlement_amount=10_000,
         )
         assert closed.stage == "CLOSED"
+
+
+class TestMonotonicFlags:
+    def test_no_monotonic_flag_violations(self, spec_result: dict) -> None:
+        violations = [v for v in spec_result["violations"] if "MonotonicFlags" in v]
+        assert not violations, violations
+
+    def test_flag_revert_is_caught(self) -> None:
+        s = WorkflowState(
+            stage="INTAKE", intake_complete=True, identity_verified=False,
+            damage_assessed=False, coverage_calculated=False, complaint_captured=False,
+            fraud_decision="NONE", settlement_amount=0,
+        )
+        s2 = replace(s, intake_complete=False)
+        assert check_monotonic_flags(s, s2) is not None
+
+
+class TestFraudDecisionFinal:
+    def test_no_fraud_decision_final_violations(self, spec_result: dict) -> None:
+        violations = [v for v in spec_result["violations"] if "FraudDecisionFinal" in v]
+        assert not violations, violations
+
+    def test_fraud_decision_change_is_caught(self) -> None:
+        s = WorkflowState(
+            stage="PROCESSING", intake_complete=True, identity_verified=True,
+            damage_assessed=True, coverage_calculated=True, complaint_captured=False,
+            fraud_decision="CLEAR", settlement_amount=0,
+        )
+        s2 = replace(s, fraud_decision="FLAG")
+        assert check_fraud_decision_final(s, s2) is not None
+
+
+class TestSettlementAmountFinal:
+    def test_no_settlement_amount_final_violations(self, spec_result: dict) -> None:
+        violations = [v for v in spec_result["violations"] if "SettlementAmountFinal" in v]
+        assert not violations, violations
+
+    def test_settlement_amount_change_is_caught(self) -> None:
+        s = WorkflowState(
+            stage="DECIDED", intake_complete=True, identity_verified=True,
+            damage_assessed=True, coverage_calculated=True, complaint_captured=False,
+            fraud_decision="CLEAR", settlement_amount=10_000,
+        )
+        s2 = replace(s, settlement_amount=15_000)
+        assert check_settlement_amount_final(s, s2) is not None
 
 
 class TestStateSpaceCoverage:

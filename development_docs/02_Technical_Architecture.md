@@ -512,7 +512,7 @@ The agent system exposes a dedicated `/showcase` API surface, read-only for ever
 | State machine | Pure Python module + TLA+ spec | Determinism is a feature |
 | Primary DB | PostgreSQL 16 with RLS | Architecture-level tenancy |
 | PII vault | Postgres with field-level encryption + KMS-style local key file | Demonstrates the pattern |
-| RAG store | ChromaDB (local) | Adequate for ≤25 docs across 3 tiers |
+| RAG store | Qdrant (cloud) | Cloud-hosted vector store; 3 label-tiered collections (PUBLIC / CONFIDENTIAL / SECRET) |
 | Sandbox | Docker containers with `--network=none`, read-only rootfs, drop-all capabilities | Reproducible isolation |
 | API layer | FastAPI | Async, native JSON schema |
 | Observability | OpenTelemetry → local Tempo/Jaeger + structured JSON logs | Industry standard, demonstrable |
@@ -554,7 +554,7 @@ The agent system exposes a dedicated `/showcase` API surface, read-only for ever
 ┌────────────────────────────────────────────────────────────────┐
 │                      docker-compose stack                       │
 │  ┌──────────────┐  ┌──────────────┐  ┌────────────────────┐    │
-│  │ api          │  │ postgres     │  │ chromadb           │    │
+│  │ api          │  │ postgres     │  │ qdrant (cloud)     │    │
 │  │ (FastAPI)    │  │ (with RLS)   │  │ (3 collections)    │    │
 │  └──────────────┘  └──────────────┘  └────────────────────┘    │
 │  ┌──────────────┐  ┌──────────────┐  ┌────────────────────┐    │

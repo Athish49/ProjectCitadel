@@ -19,23 +19,6 @@ services:
       retries: 10
       start_period: 5s
 
-  chromadb:
-    image: chromadb/chroma:0.5.20
-    container_name: secureclaim-chromadb
-    environment:
-      IS_PERSISTENT: "TRUE"
-      ANONYMIZED_TELEMETRY: "FALSE"
-    ports:
-      - "${CHROMADB_PORT:-8000}:8000"
-    volumes:
-      - chromadata:/data
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0) if urllib.request.urlopen('http://localhost:8000/api/v2/heartbeat').status==200 else sys.exit(1)"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 10s
-
   tempo:
     image: grafana/tempo:2.6.1
     container_name: secureclaim-tempo
@@ -99,8 +82,8 @@ services:
   # Adversarial agent + its dedicated API target (Sprint 4.3.1)
   #
   # Network isolation:
-  #   adversarial-api  → default network (DB/ChromaDB) + adversarial_net (attack traffic)
-  #   adversarial-agent → adversarial_net ONLY (cannot reach postgres/chromadb directly)
+  #   adversarial-api  → default network (DB) + adversarial_net (attack traffic)
+  #   adversarial-agent → adversarial_net ONLY (cannot reach postgres directly)
   # ---------------------------------------------------------------------------
   adversarial-api:
     build:
@@ -153,7 +136,6 @@ services:
 
 volumes:
   pgdata:
-  chromadata:
   tempodata:
   grafanadata:
   adversarial_spend:
