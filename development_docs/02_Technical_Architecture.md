@@ -298,10 +298,13 @@ The showcase playground runs the **full production defense gauntlet** on every s
 
 ```
 TraceEntry
-  payload:        str          # original user text
-  detections:     list[str]    # e.g. ["delimiter_injection", "role_switch_attempt"]
-  chars_stripped: int          # zero-width / format chars removed
-  sanitized:      str          # <untrusted>…</untrusted>-wrapped text
+  payload:         str          # original user text
+  detections:      list[str]    # e.g. ["delimiter_injection", "role_switch_attempt"]
+  chars_stripped:  int          # zero-width / format chars removed
+  sanitized:       str          # <untrusted>…</untrusted>-wrapped text
+  chat_session_id: str | None   # groups messages into a conversational session (30-min TTL)
+  persona_key:     str | None   # which of 5 fixture personas is active ("mark", "christina", etc.)
+  has_attachment:  bool         # whether the user attached a file this session
 ```
 
 #### `app/showcase/playground_sse.py` — Real 7-layer SSE stream
@@ -315,7 +318,7 @@ TraceEntry
 | 3 | `semantic-classifier` | P3 | Live Claude Haiku call: classifies adversarial intent; blocks if confidence ≥ 0.7 |
 | 4 | `untrusted-tagging` | P3 | Reports the `<untrusted>` wrapping applied by the sanitiser |
 | 5 | `parser-llm` | P1 | Live `run_intake_parser()` call; blocks on `SchemaViolationError` or any exception |
-| 6 | `actor-llm` | P2 | Live `run_intake_actor()` call with ephemeral capability tokens; `partial` if incomplete |
+| 6 | `actor-llm` | P2·P4 | Playground-specific system prompt (not `intake_actor._SYSTEM_PROMPT`); fetches anonymized persona context from DB (policy type, coverage, deductible, vehicle, claim stage — no name/VIN/email); loads Qdrant FAQ + policy knowledge cache; retrieves prior conversation from `session_store`; calls Claude Haiku API directly; 3 ephemeral capability tokens issued per request (P4 demo); detects `[CLAIM_READY:]` tag and generates stub CLM-XXXXXX reference; `partial` if LLM call fails |
 | 7 | `egress-filter` | P10 | Live `filter_output()` via psycopg3; falls back to `find_pii()` + `strip_urls()` if DB unavailable |
 
 The generator is a single Python `async` function that `asyncio.to_thread()`-wraps every synchronous Anthropic and psycopg3 call to avoid blocking the event loop. The orchestrator keypair is ephemeral (generated at module import, pure-Python crypto, no I/O).
@@ -323,6 +326,26 @@ The generator is a single Python `async` function that `asyncio.to_thread()`-wra
 #### `app/showcase/trace_store.py` — Ephemeral coordination layer
 
 In-memory TTL store (120 s) mapping `trace_id → TraceEntry`. `get()` semantics (not `pop()`) so EventSource reconnects within the TTL find the same entry. Not persisted: a server restart clears the store. See §3 of Doc 03 for the persisted data model.
+
+#### `app/showcase/session_store.py` — In-memory conversation history
+
+Per-session conversation history store for multi-turn playground interactions. Each `chat_session_id` UUID maps to a `list[{"role": str, "content": str}]`. TTL is 30 minutes (checked lazily on every `append()` call). Not persisted — a server restart clears all sessions. Used exclusively by the playground SSE pipeline at Layer 6 to enable multi-turn conversation context.
+
+#### Playground Auth Token
+
+All playground routes (`POST /showcase/playground/submit`, `GET /showcase/sse/playground/{trace_id}`, `GET /showcase/playground/profile/{key}`) require an `X-Playground-Token` header. Requests without a valid token receive `401 Unauthorized`. The token value is read from the `PLAYGROUND_TOKEN` environment variable on the backend and `NEXT_PUBLIC_PLAYGROUND_TOKEN` on the frontend. Validation is implemented as a FastAPI `Depends(verify_playground_token)` dependency injected into all three route functions.
+
+#### Qdrant Knowledge Cache (Playground)
+
+At first playground request, `playground_sse.py` lazily loads all points from two Qdrant collections into a module-level cached string (reused on all subsequent requests):
+- `ProjectCitadel-public_faq` (PUBLIC) — customer FAQ answers
+- `ProjectCitadel-policy_docs` (CONFIDENTIAL) — policy clauses
+
+The `ProjectCitadel-fraud_rules` (SECRET) collection is **never fetched** for playground use. This matches the P3 IFC principle: SECRET-labelled content must not reach the LLM context or customer-visible output.
+
+#### P4 Pattern Demonstration in Playground Flows
+
+3 capability tokens (`mark_intake_complete`, `request_more_info`, `search_public_faq`) are issued in-memory at Layer 6 on every playground request to demonstrate the P4 pattern. The `capability_token_log` table is **not written** in playground flows — tokens are ephemeral and serve as a visual demonstration in the defense trace panel (`3 capability tokens issued (P4 gate active)`). This is explicitly a pattern demo, not production enforcement.
 
 ### 2.11 Adversarial Agent
 
@@ -668,8 +691,9 @@ secureclaim-ai/
 | GET | `/showcase/sessions/{trace_id}` | Replay payload for a session |
 | GET | `/showcase/sse/audit` | Server-sent events: live audit stream |
 | GET | `/showcase/sse/adversarial` | Server-sent events: adversarial agent feed |
-| POST | `/showcase/playground/submit` | Submit attack payload; sanitises, stores ephemeral `TraceEntry`, returns `{ trace_id, sse_url, attack }` |
-| GET | `/showcase/sse/playground/{trace_id}` | Server-sent events: real-time 7-layer defense-trace stream; emits `layer_result` events per layer and a final `verdict` event; `stream_error` on failure |
+| POST | `/showcase/playground/submit` | Submit playground message; runs ingress sanitisation, stores ephemeral `TraceEntry` (with `chat_session_id`, `persona_key`, `has_attachment`), returns `{ trace_id, session_id, … }`; requires `X-Playground-Token` |
+| GET | `/showcase/sse/playground/{trace_id}` | Server-sent events: real-time 7-layer defense-trace stream; emits `layer_result` events per layer and a final `verdict` event whose `summary` field contains the LLM's natural-language insurance assistant response; `stream_error` on failure; requires `X-Playground-Token` |
+| GET | `/showcase/playground/profile/{key}` | Fetch anonymized profile bundle for a playground persona (name, city/state, vehicle, policy fields, claim fields — no PII); requires `X-Playground-Token` |
 
 ### 7.3 Internal (per-agent JWT + capability token required)
 

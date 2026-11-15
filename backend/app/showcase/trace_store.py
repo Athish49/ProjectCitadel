@@ -18,6 +18,9 @@ class TraceEntry:
     detections: list[str]
     chars_stripped: int
     sanitized: str  # <untrusted>-wrapped text produced by sanitise()
+    chat_session_id: str | None = None
+    persona_key: str | None = None
+    has_attachment: bool = False
     created_at: float = field(default_factory=time.monotonic)
 
 

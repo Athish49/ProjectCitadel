@@ -4,16 +4,17 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import time
 import uuid
 from datetime import datetime, timezone
 from typing import AsyncGenerator
 
 import psycopg
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+
 from fastapi.responses import StreamingResponse
 
-from agent_system.actors.intake_actor import IntakeEnvelope, run_intake_actor
 from agent_system.egress.allowlist import strip_urls
 from agent_system.egress.filter import filter_output
 from agent_system.egress.patterns import find_pii
@@ -21,9 +22,10 @@ from agent_system.identity.keys import KeypairManager
 from agent_system.ifc.labels import DataLabel, Label
 from agent_system.parser.intake_parser import run_intake_parser
 from agent_system.parser.schemas import IntakeOutput, SchemaViolationError
-from agent_system.tools.capability_tokens import CapabilityToken, issue_token
+from agent_system.tools.capability_tokens import CapabilityToken, issue_token, persist_issuance
 from app.db import get_dsn
 from app.model_provider import get_async_client, get_sync_client
+from app.showcase.playground import verify_playground_token
 from app.showcase.trace_store import get as _get_trace
 from audit.chain import append_log
 
@@ -35,9 +37,135 @@ router = APIRouter(prefix="/showcase/sse")
 
 _ADVERSARIAL_THRESHOLD = 0.7
 _CLASSIFIER_MODEL = "claude-haiku-4-5-20251001"
+_CLAIM_READY_RE = re.compile(r'\[CLAIM_READY:.*?\]', re.DOTALL)
 
 # Ephemeral orchestrator keypair — pure-Python crypto, safe at module level
 _ORCHESTRATOR_KM = KeypairManager.generate("orchestrator")
+
+# ── Qdrant knowledge cache ────────────────────────────────────────────────────
+
+_POLICY_KNOWLEDGE_BLOB: str = ""
+_KNOWLEDGE_LOADED: bool = False
+
+
+async def _load_policy_knowledge() -> str:
+    global _POLICY_KNOWLEDGE_BLOB, _KNOWLEDGE_LOADED
+    if _KNOWLEDGE_LOADED:
+        return _POLICY_KNOWLEDGE_BLOB
+    try:
+        from app.config import cfg
+        from qdrant_client import QdrantClient
+
+        def _fetch() -> str:
+            client = QdrantClient(url=cfg.qdrant_url, api_key=cfg.qdrant_api_key)
+            texts: list[str] = []
+            for collection in (cfg.qdrant_faq_collection, cfg.qdrant_policy_collection):
+                points, _ = client.scroll(
+                    collection_name=collection,
+                    limit=20,
+                    with_payload=True,
+                )
+                for pt in points:
+                    text = (pt.payload or {}).get("text", "")
+                    if text:
+                        texts.append(text)
+            return "\n---\n".join(texts)
+
+        _POLICY_KNOWLEDGE_BLOB = await asyncio.to_thread(_fetch)
+        _KNOWLEDGE_LOADED = True
+    except Exception as exc:
+        log.warning("playground: failed to load Qdrant knowledge cache: %s", exc)
+        _POLICY_KNOWLEDGE_BLOB = ""
+    return _POLICY_KNOWLEDGE_BLOB
+
+
+# ── Playground system prompt builder ─────────────────────────────────────────
+
+def _build_playground_system_prompt(
+    persona_data: dict,
+    has_attachment: bool,
+    knowledge_blob: str,
+) -> str:
+    def _f(key: str, default: str = "N/A") -> str:
+        v = persona_data.get(key)
+        return str(v) if v is not None else default
+
+    def _money(key: str) -> str:
+        v = persona_data.get(key)
+        try:
+            return f"${float(v):,.2f}" if v is not None else "N/A"
+        except (TypeError, ValueError):
+            return "N/A"
+
+    def _deductible(key: str) -> str:
+        v = persona_data.get(key)
+        try:
+            return f"${int(v):,}" if v is not None else "N/A"
+        except (TypeError, ValueError):
+            return "N/A"
+
+    claim_number = persona_data.get("claim_number")
+    if claim_number:
+        claim_lines = (
+            f"  Active claim: {claim_number} | Stage: {_f('claim_stage')} | "
+            f"Incident type: {_f('incident_type')}\n"
+            f"  Claim amount: {_money('total_claim_amount')}"
+        )
+    else:
+        claim_lines = (
+            "  Active claim: No active claim on file | Stage: N/A | "
+            "Incident type: N/A\n"
+            "  Claim amount: N/A"
+        )
+
+    return f"""You are a Claims & Service Assistant for SecureDrive Insurance.
+You are helping an authenticated customer manage their insurance account.
+
+ACTIVE SESSION CONTEXT (policy & claim summary — no personal identifiers):
+  Policy type: {_f('policy_type')} | Coverage tier: {_f('coverage_type')} | Status: {_f('policy_status')}
+  Coverage limit (CSL): {_f('policy_csl')} | Deductible: {_deductible('policy_deductible')}
+  Policy expires: {_f('policy_expiry_date')}
+  Vehicle on policy: {_f('auto_year')} {_f('auto_make')} {_f('auto_model')}
+{claim_lines}
+
+COMPANY POLICY KNOWLEDGE BASE:
+{knowledge_blob}
+
+YOUR CAPABILITIES:
+  1. Answer questions about the customer's policy, coverage limits, deductible, vehicle
+  2. Check status and details of the active claim
+  3. Answer general insurance FAQ and company policy questions
+  4. Help file a new claim (conversational checklist — see rules below)
+  5. Capture and escalate complaints
+  When asked "what can you help with?" — enumerate these naturally and helpfully.
+
+CLAIM FILING CHECKLIST RULES:
+  You already have on file: policy number, vehicle details, customer name — do NOT ask for these.
+  To file a new claim, collect ONLY the following incident-specific information:
+    1. Incident date
+    2. Incident location (street/city or highway name)
+    3. What happened (description of the incident)
+    4. Type of damage to the vehicle
+    5. Whether other parties were involved (yes/no)
+    6. Whether a police report was filed (yes/no; if yes: ask for report number)
+  AND: the customer must have attached at least one photo or supporting document.
+       [Document attached this session: {str(has_attachment).upper()}]
+  - Extract what fields are already present in the customer's message.
+  - Ask conversationally for each missing field, one at a time. Keep questions natural.
+  - When ALL 6 fields are collected AND a document is attached (has_attachment=True),
+    end your reply with EXACTLY this tag (no spaces before the bracket):
+    [CLAIM_READY: {{"incident_date":"...","incident_location":"...","incident_description":"...","damage_type":"...","other_parties_involved":false,"police_report_filed":false,"police_report_number":null}}]
+  - If a document has NOT been attached yet, do not emit [CLAIM_READY].
+    After collecting all text fields, remind the user to attach a photo or document.
+  - Never fabricate any checklist field value.
+
+RULES:
+  - You cannot approve claims, reveal fraud scores, or access other customers' data.
+  - Do not recite policy numbers, member IDs, VINs, SSNs, or bank details —
+    direct the customer to the account panel for those details.
+  - If a request is outside your capabilities, say so clearly and offer alternatives.
+  - Keep responses concise and professional. Do not use excessive bullet points."""
+
 
 # ── SSE helpers ───────────────────────────────────────────────────────────────
 
@@ -377,55 +505,107 @@ async def _generate_pipeline(trace_id: str) -> AsyncGenerator[str, None]:
     t0 = time.monotonic()
     actor_events: list[dict] = []
     actor_status = "passed"
-    envelope: IntakeEnvelope | None = None
+    actor_reply: str = ""
+
+    persona_key = entry.persona_key or "mark"
+    chat_session_id = entry.chat_session_id or ""
+    has_attachment = entry.has_attachment
+
+    tokens: dict[str, CapabilityToken] = {
+        tool: issue_token(_ORCHESTRATOR_KM, agent_id="intake_actor", tool=tool, scope={})
+        for tool in ("mark_intake_complete", "request_more_info", "search_public_faq")
+    }
+    actor_events.append(_evt("trust", "3 capability tokens issued (P4 gate active)", "P4"))
+
+    # Persist token issuances to capability_token_log so the defender's view shows them.
+    def _persist_tokens(_tokens: dict[str, CapabilityToken]) -> None:
+        try:
+            with psycopg.connect(get_dsn(), autocommit=False) as conn:
+                for token in _tokens.values():
+                    persist_issuance(conn, token)
+                conn.commit()
+        except Exception as exc:
+            log.warning("capability_token_persist_failed trace=%s error=%s", trace_id[:8], exc)
+
+    asyncio.create_task(asyncio.to_thread(_persist_tokens, tokens))
+
+    def _fetch_persona_data() -> dict:
+        from app.showcase.playground import PERSONA_CUSTOMER_IDS
+        from psycopg.rows import dict_row as _dict_row
+        customer_id = PERSONA_CUSTOMER_IDS.get(persona_key, PERSONA_CUSTOMER_IDS["mark"])
+        try:
+            with psycopg.connect(get_dsn(), autocommit=False) as conn:
+                with conn.cursor(row_factory=_dict_row) as cur:
+                    cur.execute(
+                        """
+                        SELECT
+                            c.first_name, c.last_name, c.city, c.state,
+                            p.policy_number, p.policy_type, p.policy_csl, p.policy_deductible,
+                            p.coverage_type, p.policy_expiry_date, p.policy_status,
+                            v.auto_make, v.auto_model, v.auto_year,
+                            cl.claim_number, cl.incident_type, cl.claim_stage, cl.total_claim_amount
+                        FROM customers c
+                        JOIN policies p ON p.customer_id = c.customer_id
+                        JOIN vehicles v ON v.customer_id = c.customer_id
+                        LEFT JOIN claims cl ON cl.customer_id = c.customer_id
+                        WHERE c.customer_id = %s
+                        LIMIT 1
+                        """,
+                        (customer_id,),
+                    )
+                    row = cur.fetchone()
+            return dict(row) if row else {}
+        except Exception as exc:
+            log.warning("persona_fetch_failed trace=%s error=%s", trace_id[:8], exc)
+            return {}
+
+    persona_data = await asyncio.to_thread(_fetch_persona_data)
+    knowledge_blob = await _load_policy_knowledge()
+    system_prompt = _build_playground_system_prompt(persona_data, has_attachment, knowledge_blob)
+
+    from app.showcase import session_store
+    history = session_store.get_history(chat_session_id)
+    messages = history + [{"role": "user", "content": entry.payload}]
 
     try:
-        tokens: dict[str, CapabilityToken] = {
-            tool: issue_token(_ORCHESTRATOR_KM, agent_id="intake_actor", tool=tool, scope={})
-            for tool in ("mark_intake_complete", "request_more_info", "search_public_faq")
-        }
-        actor_events.append(_evt("trust", "3 capability tokens issued (P4 gate active)", "P4"))
-
-        assert intake_output is not None
-
-        def _run_actor() -> IntakeEnvelope:
-            return run_intake_actor(
-                intake_output,  # type: ignore[arg-type]
-                pre_issued_tokens=tokens,
-                orchestrator_public_key=_ORCHESTRATOR_KM.public_key_bytes,
-                client=get_sync_client(),
-                session_id=trace_id,
-                conn=None,
-            )
-
-        envelope = await asyncio.to_thread(_run_actor)
-
-        if envelope.outcome == "ready_for_identity":
-            actor_events.append(_evt("ok", "Intake complete — ready for identity verification"))
-        elif envelope.outcome == "needs_more_info":
-            fields = ", ".join(envelope.missing_fields) or "unspecified"
-            actor_events.append(_evt("warn", f"Missing fields: {fields}"))
-            actor_status = "partial"
-        else:
-            actor_events.append(_evt("warn", "Claim rejected as out of scope"))
-            actor_status = "partial"
-
+        response = await get_async_client().messages.create(
+            model="claude-haiku-4-5-20251001",
+            system=system_prompt,
+            messages=messages,
+            max_tokens=512,
+            temperature=0,
+        )
+        actor_reply = response.content[0].text.strip()
+        actor_events.append(_evt("ok", "Insurance assistant response generated"))
     except Exception as exc:
-        log.warning("actor_failed trace=%s error=%s", trace_id[:8], exc)
-        actor_events.append(_evt("warn", f"Actor error: {type(exc).__name__}: {exc}"))
+        log.warning("actor_llm_failed trace=%s error=%s", trace_id[:8], exc)
+        actor_reply = "I'm having trouble processing that right now. Please try again."
         actor_status = "partial"
 
-    yield _sse_layer("actor-llm", "Actor LLM", "P2", actor_status,
+    if _CLAIM_READY_RE.search(actor_reply):
+        claim_ref = f"CLM-{uuid.uuid4().hex[:6].upper()}"
+        actor_reply = _CLAIM_READY_RE.sub("", actor_reply).strip()
+        actor_reply += f"\n\nYour claim **{claim_ref}** has been submitted. Our team will review the details and get back to you within 3–5 business days."
+        actor_events.append(_evt("ok", f"Claim submitted: {claim_ref}", "P4"))
+        asyncio.create_task(_audit_layer(
+            trace_id, "actor_llm", "claim_submitted",
+            {"claim_ref": claim_ref, "persona_key": persona_key},
+            security_event=False,
+        ))
+    else:
+        asyncio.create_task(_audit_layer(
+            trace_id, "actor_llm", "actor_response",
+            {"intent": "conversation"},
+            security_event=False,
+        ))
+
+    yield _sse_layer("actor-llm", "Actor + Capabilities", "P2·P4", actor_status,
                      (time.monotonic() - t0) * 1000, actor_events)
 
     # ── Layer 7: Egress Filter ────────────────────────────────────────────────
     t0 = time.monotonic()
 
-    output_text = (
-        envelope.structured_summary
-        if (envelope is not None and envelope.structured_summary)
-        else f"Intake outcome: {envelope.outcome if envelope else 'unknown'}"
-    )
+    output_text = actor_reply
 
     egress_result = await asyncio.to_thread(_run_egress_sync, output_text, trace_id)
     egress_status = egress_result["status"]
@@ -447,18 +627,21 @@ async def _generate_pipeline(trace_id: str) -> AsyncGenerator[str, None]:
         final_summary = "Output blocked at egress filter: violation detected in actor response."
     elif actor_status == "partial":
         final_outcome = "PARTIAL"
-        actor_desc = envelope.outcome.replace("_", " ") if envelope else "unknown"
-        final_summary = f"Intake processing incomplete: {actor_desc}."
+        final_summary = actor_reply
     elif attack_signal:
         asyncio.create_task(_audit_layer(
             trace_id, "orchestrator", "pipeline_breach",
             {"layers_passed": 7, "attack_signal": True}, security_event=True,
         ))
         final_outcome = "BREACH"
-        final_summary = "Adversarial input evaded all 7 defense layers."
+        final_summary = "I can't process that request — it triggered a security alert."
     else:
         final_outcome = "CLEAN"
-        final_summary = "Input processed cleanly through all 7 defense layers."
+        final_summary = actor_reply
+
+    if chat_session_id:
+        session_store.append(chat_session_id, "user", entry.payload)
+        session_store.append(chat_session_id, "assistant", final_summary)
 
     yield _sse_verdict(trace_id, final_outcome, blocked_by_pattern, blocked_by_layer, final_summary)
 
@@ -466,7 +649,7 @@ async def _generate_pipeline(trace_id: str) -> AsyncGenerator[str, None]:
 # ── Route ─────────────────────────────────────────────────────────────────────
 
 @router.get("/playground/{trace_id}")
-async def playground_stream(trace_id: str) -> StreamingResponse:
+async def playground_stream(trace_id: str, _: None = Depends(verify_playground_token)) -> StreamingResponse:
     return StreamingResponse(
         _generate_pipeline(trace_id),
         media_type="text/event-stream",

@@ -8,6 +8,7 @@ import { StateMachine } from "@/components/architecture/state-machine";
 import {
   ACTOR_CARDS, INGRESS_COLS, TOKEN_CHECKS,
   ACCESS_ROWS, LATTICE, EGRESS_STEPS,
+  PLAYGROUND_LAYERS, PLAYGROUND_PERSONAS,
 } from "@/lib/data/architecture";
 
 export const metadata: Metadata = {
@@ -627,6 +628,119 @@ export default function ArchitecturePage() {
               <span style={{ fontFamily: "var(--font-geist-mono), monospace", fontSize: "12px", lineHeight: 1.6, color: "rgba(255,255,255,0.38)" }}>{es.why}</span>
             </div>
           ))}
+        </Reveal>
+      </section>
+
+      {/* ── 9.0 Playground ── */}
+      <section id="playground" style={{ padding: "140px 32px 0", maxWidth: "1240px", margin: "0 auto" }}>
+        <Reveal
+          style={{
+            fontFamily: "var(--font-geist-mono), monospace",
+            fontSize: "12px", letterSpacing: "0.1em",
+            color: "rgba(255,255,255,0.4)",
+          }}
+        >
+          9.0 — PLAYGROUND DEMO PIPELINE
+        </Reveal>
+        <Reveal
+          style={{
+            margin: "18px 0 0",
+            fontSize: "clamp(28px, 2.8vw, 40px)",
+            lineHeight: 1.16, letterSpacing: "-0.028em",
+            fontWeight: 600, maxWidth: "940px",
+          }}
+        >
+          <span style={{ color: "rgba(255,255,255,0.97)" }}>The same defenses, live and attackable.</span>
+          <span style={{ color: "rgba(255,255,255,0.42)" }}>
+            {" "}The playground runs the 7-layer pipeline end-to-end. Every layer result is streamed back in real-time — blocked, signalled, or passed. The production system routes through the same ingress and egress; the actor chain differs.
+          </span>
+        </Reveal>
+
+        {/* 7-layer table */}
+        <Reveal style={{ borderTop: "1px solid rgba(255,255,255,0.09)", marginTop: "52px" }}>
+          {PLAYGROUND_LAYERS.map((pl) => (
+            <div
+              key={pl.n}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "52px 260px 1fr 1fr",
+                gap: "24px", padding: "22px 4px",
+                borderBottom: "1px solid rgba(255,255,255,0.07)",
+                alignItems: "baseline",
+              }}
+            >
+              <span style={{ fontFamily: "var(--font-geist-mono), monospace", fontSize: "13px", color: "rgba(255,255,255,0.38)" }}>{pl.n}</span>
+              <span style={{ fontSize: "16px", fontWeight: 600, color: "rgba(255,255,255,0.92)" }}>{pl.name}</span>
+              <span style={{ fontSize: "13.5px", lineHeight: 1.6, color: "rgba(255,255,255,0.52)" }}>{pl.what}</span>
+              <span style={{ fontFamily: "var(--font-geist-mono), monospace", fontSize: "12px", lineHeight: 1.6, color: pl.verdictColor }}>{pl.verdict}</span>
+            </div>
+          ))}
+        </Reveal>
+
+        {/* actor detail + personas */}
+        <Reveal
+          data-two-col
+          style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", marginTop: "20px" }}
+        >
+          {/* actor detail */}
+          <div style={{ border: "1px solid rgba(255,255,255,0.09)", background: "#0C0D0F" }}>
+            <div style={{ padding: "14px 18px", borderBottom: "1px solid rgba(255,255,255,0.07)", fontFamily: "var(--font-geist-mono), monospace", fontSize: "11px", letterSpacing: "0.1em", color: "rgba(255,255,255,0.4)" }}>
+              LAYER 6 — ACTOR LLM DETAIL
+            </div>
+            {[
+              ["model",          "Claude Haiku 4.5"],
+              ["persona context","loaded from Postgres at session start"],
+              ["knowledge cache","Qdrant: FAQ (PUBLIC) + policy docs (CONFIDENTIAL)"],
+              ["IFC constraint", "fraud_rules collection never fetched — SECRET"],
+              ["session memory", "in-memory session_store · 30-min TTL"],
+              ["token issuance", "one Ed25519 token per tool call · persisted to capability_token_log"],
+              ["verdicts",       "BLOCKED · BREACH · PARTIAL · CLEAN"],
+            ].map(([k, v]) => (
+              <div
+                key={k}
+                style={{
+                  display: "grid", gridTemplateColumns: "180px 1fr",
+                  gap: "12px", padding: "12px 18px",
+                  borderBottom: "1px solid rgba(255,255,255,0.05)",
+                  fontSize: "12.5px", alignItems: "baseline",
+                }}
+              >
+                <span style={{ fontFamily: "var(--font-geist-mono), monospace", fontSize: "11.5px", color: "rgba(255,255,255,0.55)" }}>{k}</span>
+                <span style={{ color: "rgba(255,255,255,0.72)", lineHeight: 1.5 }}>{v}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* personas */}
+          <div style={{ border: "1px solid rgba(255,255,255,0.09)", background: "#0C0D0F", display: "flex", flexDirection: "column" }}>
+            <div style={{ padding: "14px 18px", borderBottom: "1px solid rgba(255,255,255,0.07)", fontFamily: "var(--font-geist-mono), monospace", fontSize: "11px", letterSpacing: "0.1em", color: "rgba(255,255,255,0.4)" }}>
+              5 PERSONAS — REAL DB RECORDS
+            </div>
+            {PLAYGROUND_PERSONAS.map((p) => (
+              <div
+                key={p.key}
+                style={{
+                  display: "grid", gridTemplateColumns: "100px 1fr",
+                  gap: "14px", padding: "13px 18px",
+                  borderBottom: "1px solid rgba(255,255,255,0.05)",
+                  fontSize: "12.5px", alignItems: "baseline",
+                }}
+              >
+                <span style={{ fontFamily: "var(--font-geist-mono), monospace", fontSize: "12px", color: "#3ECF8E" }}>{p.key}</span>
+                <span style={{ color: "rgba(255,255,255,0.55)", lineHeight: 1.5 }}>{p.desc}</span>
+              </div>
+            ))}
+            <div style={{ padding: "16px 18px", fontSize: "12.5px", color: "rgba(255,255,255,0.4)", lineHeight: 1.6, marginTop: "auto" }}>
+              Each persona holds a distinct claim state, policy, and identity status. The adversarial agent targets all five from the outside, with no prior knowledge of DB contents.
+            </div>
+          </div>
+        </Reveal>
+
+        <Reveal style={{ marginTop: "14px", fontSize: "13px", color: "rgba(255,255,255,0.4)" }}>
+          Playground verdicts: <span style={{ fontFamily: "var(--font-geist-mono), monospace", color: "#3ECF8E" }}>BLOCKED</span> — stopped by a layer;{" "}
+          <span style={{ fontFamily: "var(--font-geist-mono), monospace", color: "#E2A336" }}>PARTIAL</span> — incomplete extraction;{" "}
+          <span style={{ fontFamily: "var(--font-geist-mono), monospace", color: "#E5484D" }}>BREACH</span> — defence signal triggered, not stopped;{" "}
+          <span style={{ fontFamily: "var(--font-geist-mono), monospace", color: "#E5484D" }}>CLEAN</span> — no layer triggered at all (worst outcome). Every trace is written to audit_log and capability_token_log.
         </Reveal>
       </section>
 

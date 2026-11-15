@@ -13,6 +13,8 @@ Each task in this document is self-contained. Reading prior conversation or othe
 
 ---
 
+
+
 ## Architecture Summary
 
 **What changes:** The playground currently responds to every message with a security diagnostic string (e.g., "Input processed cleanly through all 7 defense layers."). After this implementation, Layer 6 calls the Anthropic API directly with a persona-aware system prompt and returns a natural language insurance assistant reply. That reply becomes the chat bubble the user sees.
@@ -31,25 +33,33 @@ Each task in this document is self-contained. Reading prior conversation or othe
 
 ---
 
+
+
 ## Data Layer Reference
+
+
 
 ### PostgreSQL Tables (Neon)
 
-| Table | Purpose in This Implementation |
-|---|---|
-| `customers` | Source of display data for personas (first_name, last_name only — not sent to LLM) |
-| `policies` | Source of anonymized LLM context (policy_type, policy_csl, policy_deductible, coverage_type, policy_expiry_date, policy_status) |
-| `vehicles` | Source of anonymized LLM context (auto_year, auto_make, auto_model) |
-| `claims` | Source of anonymized LLM context (claim_number, claim_stage, incident_type, total_claim_amount) |
-| `pii_vault` | NOT READ in this implementation — encrypted SSN/DL/bank details |
-| `audit_log` | Written by every pipeline layer; new actions: `actor_response`, `claim_submitted` |
-| `security_events` | Written when any security layer blocks — unchanged from current behavior |
-| `adversarial_attack_logs` | Written by adversarial agent — unchanged |
-| `complaints` | NOT written from playground |
-| `claims` | NOT written from playground (stub confirmation only) |
-| `evidence` | NOT written from playground (has_attachment boolean only) |
-| `identity_attempts` | NOT written — deferred |
-| `capability_token_log` | NOT written — deferred (conn=None stays) |
+
+| Table                     | Purpose in This Implementation                                                                                                  |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `customers`               | Source of display data for personas (first_name, last_name only — not sent to LLM)                                              |
+| `policies`                | Source of anonymized LLM context (policy_type, policy_csl, policy_deductible, coverage_type, policy_expiry_date, policy_status) |
+| `vehicles`                | Source of anonymized LLM context (auto_year, auto_make, auto_model)                                                             |
+| `claims`                  | Source of anonymized LLM context (claim_number, claim_stage, incident_type, total_claim_amount)                                 |
+| `pii_vault`               | NOT READ in this implementation — encrypted SSN/DL/bank details                                                                 |
+| `audit_log`               | Written by every pipeline layer; new actions: `actor_response`, `claim_submitted`                                               |
+| `security_events`         | Written when any security layer blocks — unchanged from current behavior                                                        |
+| `adversarial_attack_logs` | Written by adversarial agent — unchanged                                                                                        |
+| `complaints`              | NOT written from playground                                                                                                     |
+| `claims`                  | NOT written from playground (stub confirmation only)                                                                            |
+| `evidence`                | NOT written from playground (has_attachment boolean only)                                                                       |
+| `identity_attempts`       | NOT written — deferred                                                                                                          |
+| `capability_token_log`    | NOT written — deferred (conn=None stays)                                                                                        |
+
+
+
 
 ### PostgreSQL Profile Bundle Query
 
@@ -74,27 +84,33 @@ Fields NOT returned: `customer_id`, VIN, email, phone, date_of_birth, address_li
 
 ### Qdrant Collections
 
-| Collection name | data_label | Content | Used in implementation? |
-|---|---|---|---|
-| `ProjectCitadel-public_faq` | PUBLIC | 10 points — customer FAQ answers | YES — cached at startup |
-| `ProjectCitadel-policy_docs` | CONFIDENTIAL | 10 points — policy clauses | YES — cached at startup |
-| `ProjectCitadel-fraud_rules` | **SECRET** | 8 points — fraud detection logic | **NEVER** — must not reach LLM |
+
+| Collection name              | data_label   | Content                          | Used in implementation?        |
+| ---------------------------- | ------------ | -------------------------------- | ------------------------------ |
+| `ProjectCitadel-public_faq`  | PUBLIC       | 10 points — customer FAQ answers | YES — cached at startup        |
+| `ProjectCitadel-policy_docs` | CONFIDENTIAL | 10 points — policy clauses       | YES — cached at startup        |
+| `ProjectCitadel-fraud_rules` | **SECRET**   | 8 points — fraud detection logic | **NEVER** — must not reach LLM |
+
 
 The collection names are available via `cfg.qdrant_faq_collection`, `cfg.qdrant_policy_collection`, and `cfg.qdrant_fraud_collection` (already in `backend/app/config.py`).
 
 ---
 
+
+
 ## The 5 Playground Personas
 
 These are real rows from the database. The `customer_id` values below are fixed and must be used exactly.
 
-| Key | customer_id | Name | Vehicle | Policy Type | Coverage | Deductible | Claim | Claim Stage |
-|---|---|---|---|---|---|---|---|---|
-| `mark` | `035a902e-c9b8-480b-81b4-d245a7b188c7` | Mark Martinez | 2018 Honda Civic | LIABILITY | PREMIUM | $2,449 | CLM-000022 | DECIDED (Theft) |
-| `christina` | `08263522-0c19-41ca-aa59-8bcb5654a5e5` | Christina Allen | 2023 Subaru Outback | COMPREHENSIVE | STANDARD | $830 | CLM-000028 | SETTLED (Fire) |
-| `ryan` | `3374fb96-344d-4d60-802f-ef269c27c916` | Ryan Morales | 2023 Chevy Silverado | FULL_COVERAGE | BASIC | $2,013 | CLM-000024 | DECIDED (Collision) |
-| `laura` | `2bc746d7-2484-46e2-80a0-6387b780d969` | Laura Moyer | 2015 Dodge Ram 1500 | FULL_COVERAGE | STANDARD | $1,351 | CLM-000009 | IDENTITY_PENDING (Animal Strike) |
-| `morgan` | `2b69c31b-323a-4e55-be79-e9fefc5b2838` | Morgan Lopez | 2018 Audi A4 | COLLISION | STANDARD | $999 | CLM-000040 | DENIED (Weather) |
+
+| Key         | customer_id                            | Name            | Vehicle              | Policy Type   | Coverage | Deductible | Claim      | Claim Stage                      |
+| ----------- | -------------------------------------- | --------------- | -------------------- | ------------- | -------- | ---------- | ---------- | -------------------------------- |
+| `mark`      | `035a902e-c9b8-480b-81b4-d245a7b188c7` | Mark Martinez   | 2018 Honda Civic     | LIABILITY     | PREMIUM  | $2,449     | CLM-000022 | DECIDED (Theft)                  |
+| `christina` | `08263522-0c19-41ca-aa59-8bcb5654a5e5` | Christina Allen | 2023 Subaru Outback  | COMPREHENSIVE | STANDARD | $830       | CLM-000028 | SETTLED (Fire)                   |
+| `ryan`      | `3374fb96-344d-4d60-802f-ef269c27c916` | Ryan Morales    | 2023 Chevy Silverado | FULL_COVERAGE | BASIC    | $2,013     | CLM-000024 | DECIDED (Collision)              |
+| `laura`     | `2bc746d7-2484-46e2-80a0-6387b780d969` | Laura Moyer     | 2015 Dodge Ram 1500  | FULL_COVERAGE | STANDARD | $1,351     | CLM-000009 | IDENTITY_PENDING (Animal Strike) |
+| `morgan`    | `2b69c31b-323a-4e55-be79-e9fefc5b2838` | Morgan Lopez    | 2018 Audi A4         | COLLISION     | STANDARD | $999       | CLM-000040 | DENIED (Weather)                 |
+
 
 This mapping must be defined as a dict in the backend as `PERSONA_CUSTOMER_IDS`:
 
@@ -111,6 +127,8 @@ PERSONA_CUSTOMER_IDS = {
 Default persona when none specified: `mark`.
 
 ---
+
+
 
 ## Anonymized LLM Context Block
 
@@ -130,11 +148,15 @@ If any field is null (e.g., no active claim), substitute "N/A" for that field.
 
 ---
 
+
+
 ## Phase 1: Auth + Persona Switcher + Profile Route
 
 **Goal:** Add token protection to all playground routes, replace the 2 hardcoded personas with 5 real-DB personas, add a persona switcher dropdown in the UI, and add a profile fetch endpoint.
 
 ---
+
+
 
 ### Task 1.1 — Add `playground_token` to backend config
 
@@ -155,6 +177,8 @@ This follows the exact same pattern as the existing fields in the class (e.g., `
 
 ---
 
+
+
 ### Task 1.2 — Add `PLAYGROUND_TOKEN` to backend environment files
 
 **Files:** `backend/.env` and `backend/.env.example`
@@ -162,6 +186,7 @@ This follows the exact same pattern as the existing fields in the class (e.g., `
 **What:** Add the playground token to both env files.
 
 **How:** Add the following line to both files:
+
 ```
 PLAYGROUND_TOKEN=citadel-demo-2026
 ```
@@ -172,6 +197,8 @@ Add it in the same section as other app-level settings (near `MONTHLY_SPEND_CAP_
 
 ---
 
+
+
 ### Task 1.3 — Add `verify_playground_token` dependency and inject into playground routes
 
 **File:** `backend/app/showcase/playground.py`
@@ -181,19 +208,19 @@ Add it in the same section as other app-level settings (near `MONTHLY_SPEND_CAP_
 **How:**
 
 1. Add the following imports at the top of the file (these are already in FastAPI's stdlib, just need to be imported):
-   - `from fastapi import Depends, Header, HTTPException`
-
+  - `from fastapi import Depends, Header, HTTPException`
 2. Define a new function `verify_playground_token` (place it above the route definitions). It should:
-   - Accept a parameter `x_playground_token: str | None = Header(None)` — FastAPI automatically maps the `X-Playground-Token` header to this parameter (it lowercases and replaces hyphens with underscores)
-   - Compare the value against `cfg.playground_token`
-   - If the values do not match (or the header is missing), raise `HTTPException(status_code=401, detail="Unauthorized")`
-   - Return `None` on success (the dependency is used for its side effect only)
-
+  - Accept a parameter `x_playground_token: str | None = Header(None)` — FastAPI automatically maps the `X-Playground-Token` header to this parameter (it lowercases and replaces hyphens with underscores)
+  - Compare the value against `cfg.playground_token`
+  - If the values do not match (or the header is missing), raise `HTTPException(status_code=401, detail="Unauthorized")`
+  - Return `None` on success (the dependency is used for its side effect only)
 3. Inject the dependency into the existing `submit` route by adding `_: None = Depends(verify_playground_token)` as a parameter to the `submit` function. It should be added after the existing parameters (`req: SubmitRequest, background_tasks: BackgroundTasks`).
 
 **Why:** Without token validation, any caller can hit the playground submit endpoint and obtain a trace_id to access user persona data.
 
 ---
+
+
 
 ### Task 1.4 — Add `PERSONA_CUSTOMER_IDS` dict and profile bundle route
 
@@ -204,7 +231,7 @@ Add it in the same section as other app-level settings (near `MONTHLY_SPEND_CAP_
 **How:**
 
 1. Add the `PERSONA_CUSTOMER_IDS` dict at module level (after imports, before route definitions):
-   ```python
+  ```python
    PERSONA_CUSTOMER_IDS: dict[str, str] = {
        "mark":      "035a902e-c9b8-480b-81b4-d245a7b188c7",
        "christina": "08263522-0c19-41ca-aa59-8bcb5654a5e5",
@@ -212,22 +239,22 @@ Add it in the same section as other app-level settings (near `MONTHLY_SPEND_CAP_
        "laura":     "2bc746d7-2484-46e2-80a0-6387b780d969",
        "morgan":    "2b69c31b-323a-4e55-be79-e9fefc5b2838",
    }
-   ```
-
+  ```
 2. Add a new route function `profile(persona_key: str, _: None = Depends(verify_playground_token))` decorated with `@router.get("/profile/{persona_key}")`. This route should:
-   - Look up `persona_key` in `PERSONA_CUSTOMER_IDS`. If not found, raise `HTTPException(status_code=404, detail="Unknown persona")`.
-   - Connect to the database using `get_dsn()` and `psycopg.connect()`.
-   - Run the profile bundle query (documented in the "Data Layer Reference" section above) parameterized with the `customer_id`.
-   - Fetch exactly one row using `dict_row` row factory.
-   - If no row found, raise `HTTPException(status_code=404, detail="Profile not found")`.
-   - Return the row as a JSON response. Do NOT include `customer_id`, VIN, email, phone, date_of_birth, address_line1, or zip_code in the response — only the fields listed in the profile bundle query above.
-   - The return type can be a plain `dict` (FastAPI will serialize it).
-
+  - Look up `persona_key` in `PERSONA_CUSTOMER_IDS`. If not found, raise `HTTPException(status_code=404, detail="Unknown persona")`.
+  - Connect to the database using `get_dsn()` and `psycopg.connect()`.
+  - Run the profile bundle query (documented in the "Data Layer Reference" section above) parameterized with the `customer_id`.
+  - Fetch exactly one row using `dict_row` row factory.
+  - If no row found, raise `HTTPException(status_code=404, detail="Profile not found")`.
+  - Return the row as a JSON response. Do NOT include `customer_id`, VIN, email, phone, date_of_birth, address_line1, or zip_code in the response — only the fields listed in the profile bundle query above.
+  - The return type can be a plain `dict` (FastAPI will serialize it).
 3. Import `psycopg.rows.dict_row` at the top of the file (it's used in `audit_sse.py` already — same pattern).
 
 **Why:** The frontend needs to display the full profile (name, vehicle, policy, claim) when a persona is selected. The backend fetches it from the real DB.
 
 ---
+
+
 
 ### Task 1.5 — Inject token dependency into the SSE stream route
 
@@ -245,6 +272,8 @@ Add it in the same section as other app-level settings (near `MONTHLY_SPEND_CAP_
 
 ---
 
+
+
 ### Task 1.6 — Update frontend environment files
 
 **Files:** `frontend/.env` and `frontend/.env.example`
@@ -252,6 +281,7 @@ Add it in the same section as other app-level settings (near `MONTHLY_SPEND_CAP_
 **What:** Add the playground token environment variable to the frontend.
 
 **How:** Add the following line to both files:
+
 ```
 NEXT_PUBLIC_PLAYGROUND_TOKEN=citadel-demo-2026
 ```
@@ -262,6 +292,8 @@ NEXT_PUBLIC_PLAYGROUND_TOKEN=citadel-demo-2026
 
 ---
 
+
+
 ### Task 1.7 — Update the Next.js proxy for playground submit to forward token
 
 **File:** `frontend/app/api/showcase/playground/route.ts`
@@ -271,21 +303,21 @@ NEXT_PUBLIC_PLAYGROUND_TOKEN=citadel-demo-2026
 **How:**
 
 1. In the `POST` handler, when building the `fetch` call to `${BACKEND_URL}/showcase/playground/submit`, add the `X-Playground-Token` header:
-   ```
+  ```
    "X-Playground-Token": process.env.NEXT_PUBLIC_PLAYGROUND_TOKEN ?? ""
-   ```
+  ```
    Add this to the `headers` object alongside the existing `"Content-Type": "application/json"`.
-
 2. In the request body parsing section, also extract `chat_session_id`, `persona_key`, and `has_attachment` from the request body (they may be absent — handle gracefully with defaults of `null`, `"mark"`, and `false` respectively).
-
 3. Include these fields in the JSON body sent to the backend:
-   - `chat_session_id` (string or null)
-   - `persona_key` (string, default `"mark"`)
-   - `has_attachment` (boolean, default `false`)
+  - `chat_session_id` (string or null)
+  - `persona_key` (string, default `"mark"`)
+  - `has_attachment` (boolean, default `false`)
 
 **Why:** The backend `SubmitRequest` model will require these fields after Phase 2. Adding them now avoids breaking changes.
 
 ---
+
+
 
 ### Task 1.8 — Update the Next.js SSE proxy to forward token
 
@@ -294,14 +326,18 @@ NEXT_PUBLIC_PLAYGROUND_TOKEN=citadel-demo-2026
 **What:** Add the `X-Playground-Token` header to the `fetch` call that proxies the SSE stream.
 
 **How:** In the `GET` handler, in the `fetch` call to `${BACKEND_URL}/showcase/sse/playground/${traceId}`, add the `X-Playground-Token` header to the `headers` object:
+
 ```
 "X-Playground-Token": process.env.NEXT_PUBLIC_PLAYGROUND_TOKEN ?? ""
 ```
+
 The existing headers object already has `Accept: "text/event-stream"` — add the token header alongside it.
 
 **Why:** The backend SSE route is now token-gated (Task 1.5). Without this, the SSE stream will return 401.
 
 ---
+
+
 
 ### Task 1.9 — Create new Next.js proxy for the profile endpoint
 
@@ -315,14 +351,16 @@ The existing headers object already has `Accept: "text/event-stream"` — add th
 2. Export an async `GET` function that accepts `(request: NextRequest, { params }: { params: Promise<{ key: string }> })`.
 3. Await `params` to get the `key`.
 4. Make a `fetch` call to `${process.env.BACKEND_URL ?? "http://localhost:8080"}/showcase/playground/profile/${key}` with:
-   - `method: "GET"`
-   - Headers: `{ "X-Playground-Token": process.env.NEXT_PUBLIC_PLAYGROUND_TOKEN ?? "" }`
+  - `method: "GET"`
+  - Headers: `{ "X-Playground-Token": process.env.NEXT_PUBLIC_PLAYGROUND_TOKEN ?? "" }`
 5. If the fetch fails or returns non-OK status, return `NextResponse.json({ error: "Profile not found" }, { status: 404 })`.
 6. Otherwise, return `NextResponse.json(await resp.json())`.
 
 **Why:** Next.js requires a server-side proxy to forward environment secrets to the backend — `NEXT_PUBLIC_PLAYGROUND_TOKEN` is client-visible but `BACKEND_URL` is server-only.
 
 ---
+
+
 
 ### Task 1.10 — Replace hardcoded 2-persona array in playground.ts with 5 real personas
 
@@ -333,28 +371,25 @@ The existing headers object already has `Accept: "text/event-stream"` — add th
 **How:**
 
 1. Delete the existing `PERSONAS` array (the block that defines Ashrith Kumar and Maria Chen with `key`, `initial`, `name`, `vehicle`, `memberId`, `policy`, `claim`, `otherClaim` fields).
-
 2. Update the `Persona` type to reflect the new field structure. The new persona objects need these fields:
-   - `key: string` — the persona key (e.g., `"mark"`)
-   - `initial: string` — first letter of first name (for avatar display)
-   - `name: string` — full display name
-   - `vehicle: string` — human-readable vehicle string (e.g., `"2018 Honda Civic"`)
-   - `city: string`
-   - `state: string`
-   - `policyType: string` — e.g., `"LIABILITY"`
-   - `coverageType: string` — e.g., `"PREMIUM"`
-   - `policyDeductible: number`
-   - `policyCsl: string` — e.g., `"100/300/100"`
-   - `policyExpiry: string` — ISO date string
-   - `policyStatus: string`
-   - `claimNumber: string`
-   - `claimStage: string`
-   - `incidentType: string`
-   - `totalClaimAmount: number`
-
+  - `key: string` — the persona key (e.g., `"mark"`)
+  - `initial: string` — first letter of first name (for avatar display)
+  - `name: string` — full display name
+  - `vehicle: string` — human-readable vehicle string (e.g., `"2018 Honda Civic"`)
+  - `city: string`
+  - `state: string`
+  - `policyType: string` — e.g., `"LIABILITY"`
+  - `coverageType: string` — e.g., `"PREMIUM"`
+  - `policyDeductible: number`
+  - `policyCsl: string` — e.g., `"100/300/100"`
+  - `policyExpiry: string` — ISO date string
+  - `policyStatus: string`
+  - `claimNumber: string`
+  - `claimStage: string`
+  - `incidentType: string`
+  - `totalClaimAmount: number`
 3. Replace with the new `PERSONAS` array using the data from the "5 Playground Personas" table above. Each entry:
-
-   ```typescript
+  ```typescript
    {
      key: 'mark',
      initial: 'M',
@@ -372,17 +407,16 @@ The existing headers object already has `Accept: "text/event-stream"` — add th
      incidentType: 'Theft',
      totalClaimAmount: 0,   // actual value from DB
    }
-   ```
-
+  ```
    Do this for all 5 personas using the real values from the database (query the DB if needed to get `city`, `state`, `policyCsl`, `totalClaimAmount` exact values for each persona).
-
 4. Update the `Persona` type export to match the new field structure.
-
 5. In the `makeTemplates` function, update all references that use old field names (`p.policy`, `p.claim`, `p.memberId`, `p.otherClaim`) to use the new field names (`p.claimNumber`, etc.). The `makeTemplates` function generates template chips — these still use pre-scripted replies and are NOT sent through the LLM. Keep `makeTemplates` working; just fix field name references.
 
 **Why:** The frontend needs real persona data to display in the profile panel and to send the correct `persona_key` to the backend.
 
 ---
+
+
 
 ### Task 1.11 — Add persona switcher to playground-app.tsx
 
@@ -393,43 +427,38 @@ The existing headers object already has `Accept: "text/event-stream"` — add th
 **How:**
 
 1. **Remove** the hardcoded line `const PERSONA: Persona = PERSONAS[0]`.
-
 2. **Remove** the lines immediately after it that derive `const p = PERSONA` and `const templates = makeTemplates(p)` — these will be replaced with state-derived equivalents below.
-
 3. Add a new state at the top of the `PlaygroundApp` component function:
-   ```typescript
+  ```typescript
    const [activePersona, setActivePersona] = useState<Persona>(PERSONAS[0]);
    const [showPersonaSwitcher, setShowPersonaSwitcher] = useState(false);
-   ```
-
+  ```
 4. Replace the removed `p` and `templates` lines with:
-   ```typescript
+  ```typescript
    const p = activePersona;
    const templates = makeTemplates(p);
    const first = p.name.split(" ")[0];
-   ```
+  ```
    (The `first` derivation may already exist below — remove duplicate if so.)
-
 5. Add a `switchPersona` function that:
-   - Accepts a `persona: Persona` parameter
-   - Sets `activePersona` to the new persona
-   - Sets `showPersonaSwitcher` to false
-   - Calls `newSession()` to reset the chat
-
+  - Accepts a `persona: Persona` parameter
+  - Sets `activePersona` to the new persona
+  - Sets `showPersonaSwitcher` to false
+  - Calls `newSession()` to reset the chat
 6. Update the `newSession` function to also reset `hasAttachment` to `false` (this field is added in Phase 3 — leave a comment placeholder here if implementing Phase 1 before Phase 3).
-
 7. In the JSX, find where the user avatar/name is displayed (the area showing the current persona's initial/name in the session info bar). Wrap it in a relative-position container and add:
-   - An `onClick` handler on the avatar element: `() => setShowPersonaSwitcher(v => !v)`
-   - A `cursor: "pointer"` style on the avatar
-   - Conditionally render a dropdown below it when `showPersonaSwitcher` is true, showing all 5 personas from `PERSONAS` as selectable items. Each item shows `persona.name` and `persona.vehicle`. Clicking an item calls `switchPersona(persona)`.
-   - Add a `useEffect` or click-outside handler to close the dropdown when clicking elsewhere on the page.
-
+  - An `onClick` handler on the avatar element: `() => setShowPersonaSwitcher(v => !v)`
+  - A `cursor: "pointer"` style on the avatar
+  - Conditionally render a dropdown below it when `showPersonaSwitcher` is true, showing all 5 personas from `PERSONAS` as selectable items. Each item shows `persona.name` and `persona.vehicle`. Clicking an item calls `switchPersona(persona)`.
+  - Add a `useEffect` or click-outside handler to close the dropdown when clicking elsewhere on the page.
 8. Update the `newSession` function's greeting message to use the new `activePersona` values:
-   - Use `p.name` and `p.claimNumber` (was `p.claim` before) in the greeting text.
+  - Use `p.name` and `p.claimNumber` (was `p.claim` before) in the greeting text.
 
 **Why:** Users need to be able to switch between personas to experience the playground from different account perspectives.
 
 ---
+
+
 
 ### Task 1.12 — Pass persona_key and chat_session_id from playground-app.tsx
 
@@ -440,22 +469,22 @@ The existing headers object already has `Accept: "text/event-stream"` — add th
 **How:**
 
 1. Add a `chatSessionId` ref: `const chatSessionId = useRef<string>(crypto.randomUUID())`.
-
 2. Update `newSession()` to reset the chat session ID: `chatSessionId.current = crypto.randomUUID()`.
-
 3. The `submit` function (from `usePlaygroundStream`) currently accepts `(payload, tab, targetFlow, sessionMode)`. The hook signature will be updated in Task 1.13 to accept additional options. For now, update all `submit()` call sites in `playground-app.tsx` to pass an options object as the 5th argument:
-   ```typescript
+  ```typescript
    submit(text, "chat", "intake", "live", undefined, {
      chatSessionId: chatSessionId.current,
      personaKey: activePersona.key,
      hasAttachment: false,  // updated in Phase 3
    });
-   ```
+  ```
    Do this for `sendDraft()`, `runTemplate()`, and `onFileSelected()`.
 
 **Why:** The backend needs these values to maintain session continuity and persona context.
 
 ---
+
+
 
 ### Task 1.13 — Update use-playground-stream.ts to forward new fields
 
@@ -466,31 +495,33 @@ The existing headers object already has `Accept: "text/event-stream"` — add th
 **How:**
 
 1. Add an `options` parameter to the `submit` callback (the 6th argument — after `templateAttack`):
-   ```typescript
+  ```typescript
    options?: { isReplay?: boolean; chatSessionId?: string; personaKey?: string; hasAttachment?: boolean }
-   ```
-
+  ```
 2. In the `fetch` call body sent to `/api/showcase/playground`, add the new fields:
-   ```typescript
+  ```typescript
    chat_session_id: options?.chatSessionId ?? null,
    persona_key: options?.personaKey ?? "mark",
    has_attachment: options?.hasAttachment ?? false,
-   ```
-
+  ```
 3. Also add the `X-Playground-Token` header to this fetch call:
-   ```typescript
+  ```typescript
    "X-Playground-Token": process.env.NEXT_PUBLIC_PLAYGROUND_TOKEN ?? ""
-   ```
+  ```
 
 **Why:** The backend's updated `SubmitRequest` model (Phase 2) expects these fields. Adding them now means Phase 2 won't require frontend changes.
 
 ---
+
+
 
 ## Phase 2: Conversational Sessions + Real Agent + final_summary Fix
 
 **Goal:** Make the playground conversational (multi-turn), make Layer 6 an actual insurance assistant, and fix the chat reply so it shows the LLM's natural language response instead of a security diagnostic string.
 
 ---
+
+
 
 ### Task 2.1 — Create session_store.py
 
@@ -504,17 +535,14 @@ The existing headers object already has `Accept: "text/event-stream"` — add th
   - `_STORE: dict[str, list[dict]]` — maps `session_id` → list of `{"role": str, "content": str}` dicts
   - `_TIMESTAMPS: dict[str, float]` — maps `session_id` → `time.monotonic()` of last append
   - `TTL: float = 1800.0` — 30-minute TTL in seconds
-
 - Function `append(session_id: str, role: str, content: str) -> None`:
   - Calls `evict_expired()` as a side effect
   - Appends `{"role": role, "content": content}` to `_STORE[session_id]` (create list if not present)
   - Updates `_TIMESTAMPS[session_id] = time.monotonic()`
-
 - Function `get_history(session_id: str) -> list[dict]`:
   - If `session_id` not in `_STORE`, return `[]`
   - If `time.monotonic() - _TIMESTAMPS[session_id] > TTL`, delete both entries and return `[]`
   - Return a copy of `_STORE[session_id]` (return `list(_STORE[session_id])`)
-
 - Function `evict_expired() -> None`:
   - Find all keys in `_TIMESTAMPS` where `time.monotonic() - timestamp > TTL`
   - Delete those keys from both `_STORE` and `_TIMESTAMPS`
@@ -522,6 +550,8 @@ The existing headers object already has `Accept: "text/event-stream"` — add th
 **Why:** Without session memory, every message is independent and the LLM cannot carry context from earlier in the conversation. In-memory storage (rather than DB) is sufficient for a demo and avoids adding new DB tables.
 
 ---
+
+
 
 ### Task 2.2 — Add new fields to TraceEntry in trace_store.py
 
@@ -541,6 +571,8 @@ These fields use default values so existing code that creates `TraceEntry` witho
 
 ---
 
+
+
 ### Task 2.3 — Add new fields to SubmitRequest and pass through to trace store
 
 **File:** `backend/app/showcase/playground.py`
@@ -550,12 +582,11 @@ These fields use default values so existing code that creates `TraceEntry` witho
 **How:**
 
 1. In the `SubmitRequest` Pydantic model, add:
-   - `chat_session_id: str | None = None`
-   - `persona_key: str | None = None`
-   - `has_attachment: bool = False`
-
+  - `chat_session_id: str | None = None`
+  - `persona_key: str | None = None`
+  - `has_attachment: bool = False`
 2. In the `submit` route function, update the `_store_trace` call to pass these new fields:
-   ```python
+  ```python
    _store_trace(trace_id, TraceEntry(
        payload=req.message,
        detections=result.detections,
@@ -565,11 +596,13 @@ These fields use default values so existing code that creates `TraceEntry` witho
        persona_key=req.persona_key,
        has_attachment=req.has_attachment,
    ))
-   ```
+  ```
 
 **Why:** These values must be stored in the trace so the SSE pipeline generator can read them when it processes the trace.
 
 ---
+
+
 
 ### Task 2.4 — Add Qdrant knowledge cache to playground_sse.py
 
@@ -580,24 +613,24 @@ These fields use default values so existing code that creates `TraceEntry` witho
 **How:**
 
 1. Add a module-level variable `_POLICY_KNOWLEDGE_BLOB: str = ""` and `_KNOWLEDGE_LOADED: bool = False`.
-
 2. Add an async function `_load_policy_knowledge() -> str` that:
-   - Returns `_POLICY_KNOWLEDGE_BLOB` immediately if `_KNOWLEDGE_LOADED` is True (cache hit)
-   - Otherwise, imports `QdrantClient` from `qdrant_client` and creates a client using `cfg.qdrant_url` and `cfg.qdrant_api_key`
-   - Calls `client.scroll(collection_name=cfg.qdrant_faq_collection, limit=20, with_payload=True)` — the `scroll` method returns `(points, next_page_offset)`
-   - Also calls `client.scroll(collection_name=cfg.qdrant_policy_collection, limit=20, with_payload=True)`
-   - **IMPORTANT: Never fetch from `cfg.qdrant_fraud_collection` (`ProjectCitadel-fraud_rules`) — this collection is SECRET-labeled and must never reach the LLM**
-   - For each point from both collections, extract the text content from the payload. The payload format from Qdrant is a dict; the text field is typically `payload["text"]` or `payload["content"]` — check the actual field name used in the existing Qdrant integration in the codebase (search for other Qdrant scroll/search calls in `backend/agent_system/`)
-   - Concatenate all texts into a single string separated by `"\n---\n"`
-   - Set `_POLICY_KNOWLEDGE_BLOB = combined_text` and `_KNOWLEDGE_LOADED = True`
-   - Return `_POLICY_KNOWLEDGE_BLOB`
-   - On any exception, log a warning and return `""` (the LLM will still work, just without the knowledge blob)
-
+  - Returns `_POLICY_KNOWLEDGE_BLOB` immediately if `_KNOWLEDGE_LOADED` is True (cache hit)
+  - Otherwise, imports `QdrantClient` from `qdrant_client` and creates a client using `cfg.qdrant_url` and `cfg.qdrant_api_key`
+  - Calls `client.scroll(collection_name=cfg.qdrant_faq_collection, limit=20, with_payload=True)` — the `scroll` method returns `(points, next_page_offset)`
+  - Also calls `client.scroll(collection_name=cfg.qdrant_policy_collection, limit=20, with_payload=True)`
+  - **IMPORTANT: Never fetch from** `cfg.qdrant_fraud_collection` **(**`ProjectCitadel-fraud_rules`**) — this collection is SECRET-labeled and must never reach the LLM**
+  - For each point from both collections, extract the text content from the payload. The payload format from Qdrant is a dict; the text field is typically `payload["text"]` or `payload["content"]` — check the actual field name used in the existing Qdrant integration in the codebase (search for other Qdrant scroll/search calls in `backend/agent_system/`)
+  - Concatenate all texts into a single string separated by `"\n---\n"`
+  - Set `_POLICY_KNOWLEDGE_BLOB = combined_text` and `_KNOWLEDGE_LOADED = True`
+  - Return `_POLICY_KNOWLEDGE_BLOB`
+  - On any exception, log a warning and return `""` (the LLM will still work, just without the knowledge blob)
 3. This function will be called inside `_generate_pipeline` at Layer 6.
 
 **Why:** Real policy content from Qdrant is more accurate than a manually written static blob. Caching it at first call (not per request) avoids network latency on every message.
 
 ---
+
+
 
 ### Task 2.5 — Add _build_playground_system_prompt helper
 
@@ -664,6 +697,8 @@ Handle None values gracefully: if `persona_data['claim_number']` is None, show "
 
 ---
 
+
+
 ### Task 2.6 — Add [CLAIM_READY:] regex pattern
 
 **File:** `backend/app/showcase/playground_sse.py`
@@ -683,6 +718,8 @@ _CLAIM_READY_RE = re.compile(r'\[CLAIM_READY:.*?\]', re.DOTALL)
 
 ---
 
+
+
 ### Task 2.7 — Rewrite Layer 6 in playground_sse.py
 
 **File:** `backend/app/showcase/playground_sse.py`
@@ -692,109 +729,44 @@ _CLAIM_READY_RE = re.compile(r'\[CLAIM_READY:.*?\]', re.DOTALL)
 **How:**
 
 1. **Remove** the entire current Layer 6 block — the section that starts with `# ── Layer 6: Actor LLM` and contains the `try:` block that creates tokens via `issue_token()` and then defines and calls `_run_actor()` which calls `run_intake_actor()`. This block ends just before the `# ── Layer 7: Egress Filter` comment.
-
 2. **Replace** it with a new Layer 6 block that does the following:
-
-   a. Initialize: `t0 = time.monotonic()`, `actor_events: list[dict] = []`, `actor_status = "passed"`, `actor_reply: str = ""`
-
+  a. Initialize: `t0 = time.monotonic()`, `actor_events: list[dict] = []`, `actor_status = "passed"`, `actor_reply: str = ""`
    b. Read fields from the trace entry:
       - `persona_key = entry.persona_key or "mark"`
       - `chat_session_id = entry.chat_session_id or ""`
       - `has_attachment = entry.has_attachment`
-
    c. Issue 3 capability tokens (preserve P4 demonstration — same as before):
-      ```python
-      tokens: dict[str, CapabilityToken] = {
-          tool: issue_token(_ORCHESTRATOR_KM, agent_id="intake_actor", tool=tool, scope={})
-          for tool in ("mark_intake_complete", "request_more_info", "search_public_faq")
-      }
-      actor_events.append(_evt("trust", "3 capability tokens issued (P4 gate active)", "P4"))
-      ```
+      `python     tokens: dict[str, CapabilityToken] = {         tool: issue_token(_ORCHESTRATOR_KM, agent_id="intake_actor", tool=tool, scope={})         for tool in ("mark_intake_complete", "request_more_info", "search_public_faq")     }     actor_events.append(_evt("trust", "3 capability tokens issued (P4 gate active)", "P4"))`     
       Note: `CapabilityToken` and `issue_token` are already imported in the file — keep those imports.
-
    d. Fetch persona data from DB using a sync helper wrapped in `asyncio.to_thread`:
-      ```python
-      def _fetch_persona_data() -> dict:
-          from app.showcase.playground import PERSONA_CUSTOMER_IDS
-          customer_id = PERSONA_CUSTOMER_IDS.get(persona_key, PERSONA_CUSTOMER_IDS["mark"])
-          # ... run the profile bundle SQL query using psycopg with dict_row ...
-          # return the row as a dict, or return {} on error
-      persona_data = await asyncio.to_thread(_fetch_persona_data)
-      ```
-
+      `python     def _fetch_persona_data() -> dict:         from app.showcase.playground import PERSONA_CUSTOMER_IDS         customer_id = PERSONA_CUSTOMER_IDS.get(persona_key, PERSONA_CUSTOMER_IDS["mark"])         # ... run the profile bundle SQL query using psycopg with dict_row ...         # return the row as a dict, or return {} on error     persona_data = await asyncio.to_thread(_fetch_persona_data)`     
    e. Load Qdrant knowledge blob:
-      ```python
-      knowledge_blob = await _load_policy_knowledge()
-      ```
-
+      `python     knowledge_blob = await _load_policy_knowledge()`     
    f. Build system prompt:
-      ```python
-      system_prompt = _build_playground_system_prompt(persona_data, has_attachment, knowledge_blob)
-      ```
-
+      `python     system_prompt = _build_playground_system_prompt(persona_data, has_attachment, knowledge_blob)`     
    g. Get conversation history from session store:
-      ```python
-      from app.showcase import session_store
-      history = session_store.get_history(chat_session_id)
-      ```
-
+      `python     from app.showcase import session_store     history = session_store.get_history(chat_session_id)`     
    h. Build messages list:
-      ```python
-      messages = history + [{"role": "user", "content": entry.payload}]
-      ```
-
+      `python     messages = history + [{"role": "user", "content": entry.payload}]`     
    i. Call Anthropic API directly using the async client:
-      ```python
-      response = await get_async_client().messages.create(
-          model="claude-haiku-4-5-20251001",
-          system=system_prompt,
-          messages=messages,
-          max_tokens=512,
-          temperature=0,
-      )
-      actor_reply = response.content[0].text.strip()
-      actor_events.append(_evt("ok", "Insurance assistant response generated"))
-      ```
+      `python     response = await get_async_client().messages.create(         model="claude-haiku-4-5-20251001",         system=system_prompt,         messages=messages,         max_tokens=512,         temperature=0,     )     actor_reply = response.content[0].text.strip()     actor_events.append(_evt("ok", "Insurance assistant response generated"))`     
       Use try/except around the entire API call; on exception, set `actor_reply = "I'm having trouble processing that right now. Please try again."` and `actor_status = "partial"`.
-
    j. Check for `[CLAIM_READY:]` tag:
-      ```python
-      if _CLAIM_READY_RE.search(actor_reply):
-          claim_ref = f"CLM-{uuid.uuid4().hex[:6].upper()}"
-          actor_reply = _CLAIM_READY_RE.sub("", actor_reply).strip()
-          actor_reply += f"\n\nYour claim **{claim_ref}** has been submitted. Our team will review the details and get back to you within 3–5 business days."
-          actor_events.append(_evt("ok", f"Claim submitted: {claim_ref}", "P4"))
-          asyncio.create_task(_audit_layer(
-              trace_id, "actor_llm", "claim_submitted",
-              {"claim_ref": claim_ref, "persona_key": persona_key},
-              security_event=False,
-          ))
-      else:
-          asyncio.create_task(_audit_layer(
-              trace_id, "actor_llm", "actor_response",
-              {"intent": "conversation"},
-              security_event=False,
-          ))
-      ```
-
+      `python     if _CLAIM_READY_RE.search(actor_reply):         claim_ref = f"CLM-{uuid.uuid4().hex[:6].upper()}"         actor_reply = _CLAIM_READY_RE.sub("", actor_reply).strip()         actor_reply += f"\n\nYour claim **{claim_ref}** has been submitted. Our team will review the details and get back to you within 3–5 business days."         actor_events.append(_evt("ok", f"Claim submitted: {claim_ref}", "P4"))         asyncio.create_task(_audit_layer(             trace_id, "actor_llm", "claim_submitted",             {"claim_ref": claim_ref, "persona_key": persona_key},             security_event=False,         ))     else:         asyncio.create_task(_audit_layer(             trace_id, "actor_llm", "actor_response",             {"intent": "conversation"},             security_event=False,         ))`     
    k. Yield the layer result SSE event:
-      ```python
-      yield _sse_layer("actor-llm", "Actor + Capabilities", "P2·P4", actor_status,
-                       (time.monotonic() - t0) * 1000, actor_events)
-      ```
-
+      `python     yield _sse_layer("actor-llm", "Actor + Capabilities", "P2·P4", actor_status,                      (time.monotonic() - t0) * 1000, actor_events)`     
 3. The `output_text` variable that Layer 7 uses must now be set to `actor_reply` (instead of deriving it from `envelope.structured_summary`). Find the Layer 7 section and update:
-   ```python
+  ```python
    output_text = actor_reply
-   ```
-
+  ```
 4. Remove the `envelope: IntakeEnvelope | None = None` variable and any references to `IntakeEnvelope` or `run_intake_actor` that are no longer used after this rewrite.
-
 5. Remove the import of `run_intake_actor` and `IntakeEnvelope` from `agent_system.actors.intake_actor` at the top of the file if they are no longer referenced anywhere in `playground_sse.py`. (They are still used by the real pipeline in other files — do not touch those imports.)
 
 **Why:** This is the core change that makes the playground feel like a real insurance assistant. The old `run_intake_actor` is designed for the production pipeline schema; the new direct call uses a custom playground system prompt.
 
 ---
+
+
 
 ### Task 2.8 — Fix final_summary assignments in the verdict section
 
@@ -810,6 +782,7 @@ _CLAIM_READY_RE = re.compile(r'\[CLAIM_READY:.*?\]', re.DOTALL)
 - **CLEAN** case (everything passed, no attack signal): change to `final_summary = actor_reply`
 
 The old strings being replaced:
+
 - `"Adversarial input evaded all 7 defense layers."` → replaced by security stub
 - `"Input processed cleanly through all 7 defense layers."` → replaced by `actor_reply`
 - `"Intake processing incomplete: ..."` → replaced by `actor_reply`
@@ -817,6 +790,8 @@ The old strings being replaced:
 **Why:** `final_summary` is what renders as the agent's chat bubble in the frontend. Currently it shows security diagnostic strings — after this change, it shows the LLM's actual insurance assistant response.
 
 ---
+
+
 
 ### Task 2.9 — Save conversation history after verdict
 
@@ -838,11 +813,15 @@ The variables `chat_session_id` and `final_summary` are both in scope at this po
 
 ---
 
+
+
 ## Phase 3: Claim Filing Checklist + Attachment Awareness
 
 **Goal:** Wire the file attachment state through so the LLM knows whether a document has been attached, and enforce the claim filing checklist (including the document requirement) via the system prompt.
 
 ---
+
+
 
 ### Task 3.1 — Track hasAttachment state in playground-app.tsx
 
@@ -853,25 +832,25 @@ The variables `chat_session_id` and `final_summary` are both in scope at this po
 **How:**
 
 1. Add state: `const [hasAttachment, setHasAttachment] = useState<boolean>(false)`.
-
 2. In the `onFileSelected` function, after `pushUserMessage(...)` and before `submit(...)`, add: `setHasAttachment(true)`.
-
 3. In the `newSession()` function, add: `setHasAttachment(false)`.
-
 4. Update all `submit()` call sites to pass `hasAttachment: hasAttachment` in the options object:
-   - `sendDraft()`: pass `hasAttachment: hasAttachment`
-   - `runTemplate()`: pass `hasAttachment: hasAttachment`
-   - `onFileSelected()`: pass `hasAttachment: true` (it was just set, but pass the literal `true` here since setState is async)
+  - `sendDraft()`: pass `hasAttachment: hasAttachment`
+  - `runTemplate()`: pass `hasAttachment: hasAttachment`
+  - `onFileSelected()`: pass `hasAttachment: true` (it was just set, but pass the literal `true` here since setState is async)
 
 **Why:** The backend Layer 6 uses `has_attachment` to decide whether to allow the `[CLAIM_READY:]` tag in the LLM response. Without wiring this through, the LLM will never acknowledge that a document has been attached.
 
 ---
+
+
 
 ### Task 3.2 — Verify has_attachment flows end-to-end
 
 **What:** Confirm that `has_attachment` set in the frontend flows through to Layer 6 without any gap.
 
 **How:** Trace the path:
+
 1. `hasAttachment: boolean` set in `playground-app.tsx`
 2. Passed as `has_attachment: hasAttachment` in `submit()` options → `use-playground-stream.ts` POST body
 3. Received by `frontend/app/api/showcase/playground/route.ts` → forwarded to backend
@@ -887,11 +866,15 @@ Verify each step in the code is consistent. Fix any mismatches found.
 
 ---
 
+
+
 ## Phase 4: Code Cleanup + Documentation Updates
 
 **Goal:** Remove dead code, fix any orphaned references, and update the 5 development documents to reflect the new architecture.
 
 ---
+
+
 
 ### Task 4.1 — Remove orphaned imports from playground_sse.py
 
@@ -900,6 +883,7 @@ Verify each step in the code is consistent. Fix any mismatches found.
 **What:** After the Layer 6 rewrite in Task 2.7, certain imports may no longer be used in this file. Remove them to avoid confusion.
 
 **How:** Check each of these imports and remove any that are no longer referenced anywhere in `playground_sse.py`:
+
 - `from agent_system.actors.intake_actor import IntakeEnvelope, run_intake_actor` — these should be removed if no other code in the file uses them
 - `from agent_system.parser.schemas import IntakeOutput, SchemaViolationError` — check if `intake_output` variable is still referenced in the file; if the parser section still uses `IntakeOutput`, keep it; if not, remove
 - `from agent_system.parser.intake_parser import run_intake_parser` — check if still called
@@ -909,6 +893,8 @@ Note: `CapabilityToken`, `issue_token`, `KeypairManager` should be KEPT — they
 **Why:** Unused imports mislead future readers into thinking those code paths are still active.
 
 ---
+
+
 
 ### Task 4.2 — Verify makeTemplates still works after Persona type update
 
@@ -929,6 +915,8 @@ The templates are pre-scripted demo chips — they do not send data through the 
 
 ---
 
+
+
 ### Task 4.3 — Update 06_Showcase_Platform_Spec.md
 
 **File:** `development_docs/06_Showcase_Platform_Spec.md`
@@ -936,6 +924,7 @@ The templates are pre-scripted demo chips — they do not send data through the 
 **What:** Update the playground section to reflect the new architecture.
 
 **How:** Find the section describing the Attack Playground (approximately §5 or similar). Update it to describe:
+
 - The 5 persona accounts with profile switching
 - Conversational sessions (multi-turn, 30-minute TTL)
 - Multi-intent agent: policy questions, claim status, FAQ, complaint, claim filing
@@ -949,6 +938,8 @@ Maintain the existing document's formatting style.
 
 ---
 
+
+
 ### Task 4.4 — Update 02_Technical_Architecture.md
 
 **File:** `development_docs/02_Technical_Architecture.md`
@@ -956,6 +947,7 @@ Maintain the existing document's formatting style.
 **What:** Update architecture diagrams/descriptions to reflect the new components.
 
 **How:**
+
 - Layer 6: Update its description to note it now uses a playground-specific system prompt (separate from the production `intake_actor._SYSTEM_PROMPT`), injecting anonymized persona context
 - Add `session_store.py` module to any module-level architecture diagrams
 - In the auth section, add a note about the static playground token (`X-Playground-Token` header validated at all playground routes)
@@ -964,6 +956,8 @@ Maintain the existing document's formatting style.
 
 ---
 
+
+
 ### Task 4.5 — Update 05_Implementation_Roadmap.md
 
 **File:** `development_docs/05_Implementation_Roadmap.md`
@@ -971,10 +965,13 @@ Maintain the existing document's formatting style.
 **What:** Mark completed sprint items and add new playground expansion items.
 
 **How:** 
+
 - Find the Sprint 4.3.x section and mark playground-related tasks as done
 - Add a new sprint section (Sprint 4.4 or similar) with line items covering the work done in this implementation: persona switcher, conversational sessions, playground agent, claim filing checklist, adversarial agent expansion
 
 ---
+
+
 
 ### Task 4.6 — Update 03_Data_Model_Schema.md
 
@@ -983,11 +980,14 @@ Maintain the existing document's formatting style.
 **What:** Document the session_store and playground persona approach.
 
 **How:**
+
 - Add a note that the `session_store` is an in-memory Python module (not a DB table) with 30-minute TTL, used for playground conversational history only
 - Add a note that 5 specific customers from the `customers` table serve as playground personas (read-only, identified by the 5 customer_ids listed in the implementation), with no special DB flags required
 - Add a note that playground flows do NOT write to `claims`, `evidence`, `complaints`, or `pii_vault` — only `audit_log` and `security_events` receive playground writes
 
 ---
+
+
 
 ## Phase 5: Adversarial Agent Expansion
 
@@ -996,6 +996,8 @@ Maintain the existing document's formatting style.
 **Background on why existing attacks fail at Layer 5:** The current 30 attack categories generate raw adversarial text. The Parser LLM (Sonnet) at Layer 5 validates input against an insurance claim schema (`IntakeOutput`). Text that doesn't look like a valid claim produces a `SchemaViolationError` — blocking at Layer 5. The new categories instruct the payload generator to wrap the adversarial content inside a structurally valid-looking insurance claim (name, policy number, incident date, incident type, description) with the adversarial instruction embedded naturally in the description field.
 
 ---
+
+
 
 ### Task 5.1 — Add `ADVERSARIAL_PERSONA_KEY` to adversarial agent config
 
@@ -1014,6 +1016,8 @@ PLAYGROUND_TOKEN: str = os.environ.get("PLAYGROUND_TOKEN", "citadel-demo-2026")
 
 ---
 
+
+
 ### Task 5.2 — Update _send_attack to include persona_key, chat_session_id, and auth token
 
 **File:** `backend/adversarial_agent/strategy.py`
@@ -1023,27 +1027,26 @@ PLAYGROUND_TOKEN: str = os.environ.get("PLAYGROUND_TOKEN", "citadel-demo-2026")
 **How:**
 
 1. In `_send_attack`, when building the JSON body for the submit POST, add:
-   - `"persona_key": config.ADVERSARIAL_PERSONA_KEY` (import `config` at the top — check if already imported; the file currently uses `from config import MODEL`)
-   - `"chat_session_id": str(uuid.uuid4())` — generate a fresh UUID per attack so each attack is an independent session
-   - `"has_attachment": False` — adversarial attacks don't attach files
-
+  - `"persona_key": config.ADVERSARIAL_PERSONA_KEY` (import `config` at the top — check if already imported; the file currently uses `from config import MODEL`)
+  - `"chat_session_id": str(uuid.uuid4())` — generate a fresh UUID per attack so each attack is an independent session
+  - `"has_attachment": False` — adversarial attacks don't attach files
 2. In the `httpx.post()` call, add the `X-Playground-Token` header:
-   ```python
+  ```python
    headers={"X-Playground-Token": config.PLAYGROUND_TOKEN}
-   ```
-
+  ```
 3. Similarly, in `_consume_sse_stream`, the `httpx.stream()` call for the SSE endpoint also needs the token header:
-   ```python
+  ```python
    headers={"X-Playground-Token": config.PLAYGROUND_TOKEN}
-   ```
-
+  ```
 4. Import `config` at the top of `strategy.py` if not already imported as a module (check — currently it uses `from config import MODEL`, so add `from config import MODEL, ADVERSARIAL_PERSONA_KEY, PLAYGROUND_TOKEN` or import the module as `import config`).
 
 **Why:** Without these additions, all adversarial agent requests will fail with 401 Unauthorized after Phase 1 adds token validation.
 
 ---
 
-### Task 5.3 — Update _TARGET_DESCRIPTION in strategy.py
+
+
+### Task 5.3 — Update _TARGET_DESCRIPTION in [strategy.py](http://strategy.py)
 
 **File:** `backend/adversarial_agent/strategy.py`
 
@@ -1065,6 +1068,7 @@ LAYER 6 — Playground Actor LLM (Claude Haiku, capability-token-gated)
 ```
 
 Also update the section explaining how to craft payloads that reach Layer 6:
+
 ```
 === HOW TO REACH LAYER 6 ===
 The Parser LLM (Layer 5) uses a Sonnet model to validate the input against an insurance
@@ -1083,6 +1087,8 @@ where your attack takes effect.
 **Why:** The adversarial agent uses `_TARGET_DESCRIPTION` to inform the payload generator. Without updating it, the generator won't know how to craft payloads that reach the new Layer 6.
 
 ---
+
+
 
 ### Task 5.4 — Add 11 new attack categories to ATTACK_CATEGORIES
 
@@ -1225,6 +1231,8 @@ _Category(
 ),
 ```
 
+
+
 **Group: Denial of Service / Resource Abuse** — test pipeline stability:
 
 ```
@@ -1241,6 +1249,8 @@ _Category(
 ```
 
 ---
+
+
 
 ### Task 5.5 — Update _evasion_note in strategy.py for Layer 6 blocks
 
@@ -1266,6 +1276,8 @@ if layer == "actor-llm":
 
 ---
 
+
+
 ### Task 5.6 — Update MAX_ATTEMPTS in adversarial agent config (optional)
 
 **File:** `backend/adversarial_agent/config.py`
@@ -1284,6 +1296,8 @@ Or leave it at 60 for a quick partial run and let operators override via env. Do
 
 ---
 
+
+
 ## Verification Steps
 
 After all phases are complete, verify the following in order:
@@ -1291,116 +1305,106 @@ After all phases are complete, verify the following in order:
 ### Backend verification
 
 1. **Start backend:** `cd backend && uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload`
-
 2. **Test token protection (should fail):**
-   ```bash
+  ```bash
    curl -s -X POST http://localhost:8080/showcase/playground/submit \
      -H "Content-Type: application/json" \
      -d '{"message": "test"}' | python3 -m json.tool
    # Expected: {"detail": "Unauthorized"}
-   ```
-
+  ```
 3. **Test token protection (should succeed):**
-   ```bash
+  ```bash
    curl -s -X POST http://localhost:8080/showcase/playground/submit \
      -H "Content-Type: application/json" \
      -H "X-Playground-Token: citadel-demo-2026" \
      -d '{"message": "What is my deductible?", "persona_key": "mark", "chat_session_id": "test-session-001", "has_attachment": false}' | python3 -m json.tool
    # Expected: {"trace_id": "...", "session_id": "...", ...}
-   ```
-
+  ```
 4. **Test profile endpoint:**
-   ```bash
+  ```bash
    curl -s http://localhost:8080/showcase/playground/profile/mark \
      -H "X-Playground-Token: citadel-demo-2026" | python3 -m json.tool
    # Expected: JSON with policy_type, policy_deductible, auto_make, auto_model, claim_number, etc.
    # Must NOT contain: customer_id, email, phone, date_of_birth, vin
-   ```
-
+  ```
 5. **Test full pipeline (SSE):**
-   ```bash
+  ```bash
    TRACE_ID=$(curl -s -X POST http://localhost:8080/showcase/playground/submit \
      -H "Content-Type: application/json" \
      -H "X-Playground-Token: citadel-demo-2026" \
      -d '{"message": "What coverage do I have?", "persona_key": "mark", "chat_session_id": "verify-001", "has_attachment": false}' | python3 -c "import sys,json; print(json.load(sys.stdin)['trace_id'])")
-   
+
    curl -s "http://localhost:8080/showcase/sse/playground/${TRACE_ID}" \
      -H "X-Playground-Token: citadel-demo-2026" \
      -H "Accept: text/event-stream"
    # Expected: layer_result events for all 7 layers, then a verdict event where
    # "summary" contains a natural language insurance assistant response (not a security string)
-   ```
-
+  ```
 6. **Test session memory (multi-turn):**
-   - Submit message 1: "What is my deductible?" with `chat_session_id: "session-abc"`
-   - Submit message 2: "And what does my policy cover?" with same `chat_session_id: "session-abc"`
-   - The verdict summary of message 2 should show the LLM has context from message 1 (it should answer the coverage question without asking who they are again)
-
+  - Submit message 1: "What is my deductible?" with `chat_session_id: "session-abc"`
+  - Submit message 2: "And what does my policy cover?" with same `chat_session_id: "session-abc"`
+  - The verdict summary of message 2 should show the LLM has context from message 1 (it should answer the coverage question without asking who they are again)
 7. **Check audit_log for new action types:**
-   ```sql
+  ```sql
    SELECT action, agent_id, COUNT(*) FROM audit_log 
    WHERE action IN ('actor_response', 'claim_submitted') 
    GROUP BY action, agent_id;
-   ```
+  ```
    Expected: rows for `actor_response` with `agent_id=actor_llm` after sending clean messages.
+
+
 
 ### Frontend verification
 
 1. **Start frontend:** `cd frontend && npm run dev`
-
 2. **Navigate to playground page.** Verify:
-   - Default persona is Mark Martinez
-   - Profile panel shows Mark's vehicle (2018 Honda Civic), policy type (LIABILITY), deductible ($2,449), claim number (CLM-000022), claim stage (DECIDED)
-   - Greeting message uses Mark's name
-
+  - Default persona is Mark Martinez
+  - Profile panel shows Mark's vehicle (2018 Honda Civic), policy type (LIABILITY), deductible ($2,449), claim number (CLM-000022), claim stage (DECIDED)
+  - Greeting message uses Mark's name
 3. **Click the avatar/persona area.** Verify:
-   - A dropdown appears showing all 5 personas with name and vehicle
-   - Clicking "Christina Allen" switches the active persona
-   - Profile panel updates to Christina's data (2023 Subaru Outback, COMPREHENSIVE, $830 deductible, SETTLED claim)
-   - Chat is reset with a new greeting
-
+  - A dropdown appears showing all 5 personas with name and vehicle
+  - Clicking "Christina Allen" switches the active persona
+  - Profile panel updates to Christina's data (2023 Subaru Outback, COMPREHENSIVE, $830 deductible, SETTLED claim)
+  - Chat is reset with a new greeting
 4. **Send a chat message as Christina:** "What is my deductible?"
-   - Layer progress indicators should animate through all 7 layers
-   - The chat bubble should show a natural language response mentioning "$830" (Christina's deductible)
-   - Response should NOT be "Input processed cleanly through all 7 defense layers."
-
+  - Layer progress indicators should animate through all 7 layers
+  - The chat bubble should show a natural language response mentioning "$830" (Christina's deductible)
+  - Response should NOT be "Input processed cleanly through all 7 defense layers."
 5. **Test multi-turn claim filing:**
-   - Send: "I need to file a claim for a collision"
-   - Agent should ask for incident details (not ask for name/policy/vehicle)
-   - Provide 2–3 follow-up messages with incident details
-   - Attach a file (click the attachment button)
-   - Complete the remaining fields
-   - Agent should eventually output the stub confirmation with a CLM-XXXXXX reference
-
+  - Send: "I need to file a claim for a collision"
+  - Agent should ask for incident details (not ask for name/policy/vehicle)
+  - Provide 2–3 follow-up messages with incident details
+  - Attach a file (click the attachment button)
+  - Complete the remaining fields
+  - Agent should eventually output the stub confirmation with a CLM-XXXXXX reference
 6. **Test persona data isolation:**
-   - While on Morgan Lopez's profile, ask "What is my claim status?"
-   - The response should mention Morgan's claim (CLM-000040, DENIED status) — not another persona's data
+  - While on Morgan Lopez's profile, ask "What is my claim status?"
+  - The response should mention Morgan's claim (CLM-000040, DENIED status) — not another persona's data
+
+
 
 ### Adversarial agent verification
 
 1. **Run adversarial agent (short test, 10 attempts):**
-   ```bash
+  ```bash
    cd backend && MAX_ATTEMPTS=10 python -m adversarial_agent.main
-   ```
-
+  ```
 2. **Verify requests succeed:** No 401 errors in the adversarial agent logs.
-
 3. **Check new categories fire:** Look in logs for attack categories with IDs 80–91.
-
 4. **Verify Layer 6 attempts:** After a full run, check `adversarial_attack_logs`:
-   ```sql
+  ```sql
    SELECT attack_category_group, blocked_by_layer, COUNT(*) 
    FROM adversarial_attack_logs 
    WHERE attack_category_group IN ('Structured Injection Attacks', 'Capability Boundary Attacks', 'Cross-Persona Probing', 'Egress Bypass Attempts')
    GROUP BY attack_category_group, blocked_by_layer
    ORDER BY attack_category_group;
-   ```
+  ```
    Some attacks should show `blocked_by_layer = 'actor-llm'` or `blocked_by_layer = 'egress-filter'` — confirming these new categories are reaching Layer 6.
-
 5. **Verify audit_log entries for new attacks:**
-   ```sql
+  ```sql
    SELECT action, COUNT(*) FROM audit_log 
    WHERE ts > NOW() - INTERVAL '1 hour'
    GROUP BY action ORDER BY COUNT(*) DESC;
-   ```
+  ```
    Should show `schema_violation_blocked` for old-style attacks and hopefully `actor_response` for new structured-injection attacks that pass Layer 5.
+

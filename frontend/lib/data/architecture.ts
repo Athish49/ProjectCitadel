@@ -360,6 +360,39 @@ export const EGRESS_STEPS = [
   { n: "04", name: "Length cap",          what: "Text truncated to MAX_OUTPUT_CHARS.",                                                                   why: "last on purpose — truncating earlier would silently discard PII in the tail without detection" },
 ];
 
+// ── Playground demo pipeline ─────────────────────────────────────────────────
+
+export interface PlaygroundLayer {
+  n: string;
+  name: string;
+  what: string;
+  verdict: string;
+  verdictColor: string;
+}
+
+export const PLAYGROUND_LAYERS: PlaygroundLayer[] = [
+  { n: "L1", name: "Ingress Sanitisation",  what: "NFKC normalisation, zero-width/RTL strip, delimiter injection detection. Blocked payloads never reach L2.",                                         verdict: "blocks: delimiter injection",    verdictColor: "#E5484D" },
+  { n: "L2", name: "Pattern Detection",     what: "Static scan against a curated injection-template library (role_switch, instruction_override, data_exfiltration, etc.). All matches written to the trace as sanitizer_detections.", verdict: "signals: matched patterns",      verdictColor: "#E2A336" },
+  { n: "L3", name: "Semantic Classifier",   what: "Claude Haiku adversarial-intent classifier. Logged as a detection signal — not the primary stop, but feeds the final verdict. Threshold 0.70.",   verdict: "signals: adversarial confidence", verdictColor: "#E2A336" },
+  { n: "L4", name: "Untrusted Tagging",     what: "Payload is wrapped in <untrusted> delimiters and labelled UNTRUSTED. Downstream components never strip this label.",                                verdict: "label: UNTRUSTED attached",     verdictColor: "#8A6FA8" },
+  { n: "L5", name: "Parser LLM",            what: "Quarantined Claude Haiku with zero tools. Converts untrusted text to strict JSON (intent + fields). Schema violation → quarantine.",               verdict: "blocks: schema violation",      verdictColor: "#E5484D" },
+  { n: "L6", name: "Actor LLM",             what: "Claude Haiku 4.5 insurance assistant. Persona context from DB, FAQ/policy knowledge from Qdrant (SECRET fraud_rules never fetched). Multi-turn via session_store (30-min TTL). Capability tokens issued per tool call.", verdict: "blocks: capability denial",     verdictColor: "#E5484D" },
+  { n: "L7", name: "Egress Filter",         what: "Same 4-step filter as production: SECRET kill-switch → URL allowlist → PII regex → length cap. Applied to every actor response before it leaves the server.", verdict: "blocks: pii / url leak",        verdictColor: "#E5484D" },
+];
+
+export interface PlaygroundPersona {
+  key: string;
+  desc: string;
+}
+
+export const PLAYGROUND_PERSONAS: PlaygroundPersona[] = [
+  { key: "mark",      desc: "recent rear-end accident, active claim in PROCESSING" },
+  { key: "christina", desc: "multi-vehicle policy, prior claim settled" },
+  { key: "ryan",      desc: "first-time claimant, intake incomplete" },
+  { key: "laura",     desc: "identity lockout scenario — 0 attempts remaining" },
+  { key: "morgan",    desc: "fraud-flagged claim in ESCALATED state" },
+];
+
 // ── Arch nav links ───────────────────────────────────────────────────────────
 
 export const ARCH_NAV_LINKS = [
@@ -371,4 +404,5 @@ export const ARCH_NAV_LINKS = [
   { label: "Capabilities", href: "#tokens" },
   { label: "Data model",  href: "#data" },
   { label: "Egress",      href: "#egress" },
+  { label: "Playground",  href: "#playground" },
 ];

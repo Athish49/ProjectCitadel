@@ -74,7 +74,7 @@ export function usePlaygroundStream() {
       targetFlow: TargetFlow,
       _sessionMode: SessionMode,
       templateAttack?: { id: number; name: string },
-      options?: { isReplay?: boolean }
+      options?: { isReplay?: boolean; chatSessionId?: string; personaKey?: string; hasAttachment?: boolean }
     ) => {
       // Clean up any previous stream
       esRef.current?.close();
@@ -90,11 +90,17 @@ export function usePlaygroundStream() {
       try {
         const res = await fetch("/api/showcase/playground", {
           method:  "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "X-Playground-Token": process.env.NEXT_PUBLIC_PLAYGROUND_TOKEN ?? "",
+          },
           body:    JSON.stringify({
             payload,
             tab,
             targetFlow,
+            chat_session_id: options?.chatSessionId ?? null,
+            persona_key:     options?.personaKey ?? "mark",
+            has_attachment:  options?.hasAttachment ?? false,
             ...(templateAttack ? { attackId: templateAttack.id, attackName: templateAttack.name } : {}),
           }),
         });

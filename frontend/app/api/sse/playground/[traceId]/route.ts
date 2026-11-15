@@ -24,7 +24,12 @@ export async function GET(
   try {
     backendResp = await fetch(
       `${BACKEND_URL}/showcase/sse/playground/${traceId}`,
-      { headers: { Accept: "text/event-stream" } }
+      {
+        headers: {
+          "Accept": "text/event-stream",
+          "X-Playground-Token": process.env.NEXT_PUBLIC_PLAYGROUND_TOKEN ?? "",
+        },
+      }
     );
   } catch {
     return errorStream("Backend unavailable. Check that the server is running.");
