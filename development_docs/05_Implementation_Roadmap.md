@@ -1,8 +1,8 @@
 # SecureClaim AI — Implementation Roadmap
 
-**Version:** 2.0
-**Date:** May 27, 2026
-**Status:** Final v2.0
+**Version:** 2.1
+**Date:** July 12, 2026
+**Status:** Updated v2.1 — Sprint 4.3 complete; Sprint 4.4 (Playground Expansion) complete
 **Author:** Athish G R
 **Classification:** Internal
 
@@ -197,16 +197,74 @@ All four specialist agents are real (not stubs); the autonomous adversarial agen
 | 4.2.3 | `draft_summary` actor flow; output through egress filter | summary generated, PII-clean | 4 |
 | 4.2.4 | End-to-end claim flow with real agents on real seed data | 5 happy-path + 2 escalation paths pass | 6 |
 
-### Sprint 4.3 — Adversarial Agent (Week 6–7)
+### Sprint 4.3 — Adversarial Agent (Week 6–7) ✓ DONE
 
 | # | Task | Output | Hours |
 |---|------|--------|-------|
-| 4.3.1 | Adversarial agent container (isolated network egress, separate API instance) | sandbox running | 5 |
-| 4.3.2 | Strategy module: rotate through attack categories; mutate payloads from feedback | autonomous attack loop | 8 |
-| 4.3.3 | Spend cap enforcement: hard $50/month with circuit breaker | cap enforced and surfaced | 3 |
-| 4.3.4 | Live feed to Console (SSE); "successful breach" counter; auto-open GitHub issue on breach | feed live; breaches loud | 4 |
+| 4.3.1 | ✓ Adversarial agent container (isolated network egress, separate API instance) | sandbox running | 5 |
+| 4.3.2 | ✓ Strategy module: rotate through attack categories; mutate payloads from feedback | autonomous attack loop | 8 |
+| 4.3.3 | ✓ Spend cap enforcement: hard $50/month with circuit breaker | cap enforced and surfaced | 3 |
+| 4.3.4 | ✓ Live feed to Console (SSE); "successful breach" counter; auto-open GitHub issue on breach | feed live; breaches loud | 4 |
 
-**Phase 4 Milestone:** All four real agents work end-to-end. Adversarial agent has run for ≥48 hours continuously. Console live feed shows real adversarial attempts.
+### Sprint 4.4 — Playground Expansion: Conversational Insurance Assistant (2026-07-12) ✓ DONE
+
+Transformed the playground from a security-diagnostic stub into a fully conversational insurance assistant. All 5 phases complete. See `development_docs/implementation_v2.md` for full task-level detail.
+
+**Phase A — Auth + Persona Switcher + Profile Route**
+
+| # | Task | Output |
+|---|------|--------|
+| 4.4.1 | ✓ Add `PLAYGROUND_TOKEN` to backend config + env files | `cfg.playground_token` reads `PLAYGROUND_TOKEN` env var; default `citadel-demo-2026` |
+| 4.4.2 | ✓ `verify_playground_token` FastAPI dependency injected into all 3 playground routes | Unauthenticated requests receive `401 Unauthorized` |
+| 4.4.3 | ✓ `PERSONA_CUSTOMER_IDS` dict + `GET /showcase/playground/profile/{key}` route | Returns anonymized profile bundle (policy, vehicle, claim fields — no PII); psycopg3 JOIN query |
+| 4.4.4 | ✓ Frontend env vars + Next.js proxy updates (token forwarding on submit + SSE routes) | `X-Playground-Token` forwarded on all 3 frontend proxy routes |
+| 4.4.5 | ✓ New Next.js proxy `GET /api/playground/profile/[key]` | Server-side proxy forwards token; `BACKEND_URL` stays server-only |
+| 4.4.6 | ✓ Replace hardcoded 2-persona array with 5 real-DB personas in `frontend/lib/data/playground.ts` | `PERSONAS` array uses real UUIDs, real field values queried from Neon DB |
+| 4.4.7 | ✓ Persona switcher dropdown in `playground-app.tsx` | Clickable avatar → 5-persona dropdown; `switchPersona()` resets chat + session ID |
+| 4.4.8 | ✓ `chatSessionId` ref + `persona_key`/`has_attachment` wired through `use-playground-stream.ts` | All 3 submit call sites pass session + persona + attachment context |
+
+**Phase B — Conversational Sessions + Real Layer 6 Agent**
+
+| # | Task | Output |
+|---|------|--------|
+| 4.4.9 | ✓ `backend/app/showcase/session_store.py` — in-memory history with 30-min TTL | `append()`, `get_history()`, `evict_expired()` |
+| 4.4.10 | ✓ `TraceEntry` extended with `chat_session_id`, `persona_key`, `has_attachment` | Backwards-compatible dataclass fields with defaults |
+| 4.4.11 | ✓ Qdrant lazy knowledge cache in `playground_sse.py` (FAQ + policy; fraud excluded) | Module-level `_POLICY_KNOWLEDGE_BLOB` populated on first request; `SECRET` collection never fetched |
+| 4.4.12 | ✓ `_build_playground_system_prompt()` — persona-aware prompt with claim filing checklist rules | 6-field checklist, `[CLAIM_READY:]` tag instructions, anonymized context block |
+| 4.4.13 | ✓ `_CLAIM_READY_RE` regex compiled at module level | `re.compile(r'\[CLAIM_READY:.*?\]', re.DOTALL)` |
+| 4.4.14 | ✓ Layer 6 rewritten: direct Anthropic Haiku API call replacing `run_intake_actor()` | Persona DB fetch → Qdrant cache → session history → Haiku call → CLAIM_READY detection → stub CLM-XXXXXX ref |
+| 4.4.15 | ✓ `final_summary` in verdict section set to `actor_reply` | Chat bubble now shows natural-language insurance response, not security diagnostic string |
+| 4.4.16 | ✓ Post-verdict session history save | `session_store.append(chat_session_id, "user"/"assistant", ...)` enables multi-turn context |
+
+**Phase C — Claim Filing Checklist + Attachment Awareness**
+
+| # | Task | Output |
+|---|------|--------|
+| 4.4.17 | ✓ `hasAttachment` state in `playground-app.tsx` | Set to `true` on file selection; reset to `false` on `newSession()` and `switchPersona()` |
+| 4.4.18 | ✓ End-to-end `has_attachment` flow verified | Frontend state → POST body → `SubmitRequest` → `TraceEntry` → Layer 6 system prompt `[Document attached: TRUE/FALSE]` |
+
+**Phase D — Cleanup + Documentation**
+
+| # | Task | Output |
+|---|------|--------|
+| 4.4.19 | ✓ Orphaned imports removed from `playground_sse.py` (`IntakeEnvelope`, `run_intake_actor`) | File imports reflect actual code paths |
+| 4.4.20 | ✓ `makeTemplates` field references updated to new `Persona` type | No TypeScript errors on `p.claimNumber`, `p.policyType`, etc. |
+| 4.4.21 | ✓ `06_Showcase_Platform_Spec.md` §6.2.5 added | Full playground architecture section: personas, sessions, claim checklist, auth, Qdrant cache |
+| 4.4.22 | ✓ `02_Technical_Architecture.md` updated | Layer 6 table row, TraceEntry fields, session_store, auth token, Qdrant cache, P4 demo note |
+| 4.4.23 | ✓ `05_Implementation_Roadmap.md` updated (this document) | Sprint 4.3 marked done; Sprint 4.4 added |
+
+**Phase E — Adversarial Agent Expansion**
+
+| # | Task | Output |
+|---|------|--------|
+| 4.4.24 | ✓ `ADVERSARIAL_PERSONA_KEY` + `PLAYGROUND_TOKEN` constants in `adversarial_agent/config.py` | Adversarial agent sends valid token and persona key |
+| 4.4.25 | ✓ `_send_attack` + `_consume_sse_stream` updated with token header + new body fields | No `401` errors from adversarial agent; `persona_key`, `chat_session_id`, `has_attachment` sent |
+| 4.4.26 | ✓ `_TARGET_DESCRIPTION` updated for new Layer 6 behavior | Payload generator knows Layer 6 is a conversational assistant, not an intake parser |
+| 4.4.27 | ✓ 11 new attack categories added (IDs 80–90) in 4 groups | Structured Injection, Capability Boundary, Cross-Persona Probing, Egress Bypass, Infrastructure |
+| 4.4.28 | ✓ `_evasion_note()` extended with `actor-llm` case | Blocked-at-Layer-6 attempts receive targeted evasion guidance |
+| 4.4.29 | ✓ `MAX_ATTEMPTS` default updated to 123 (41 categories × 3 passes) | Full category coverage in a single adversarial run |
+
+**Phase 4 Milestone:** All four real agents work end-to-end. Adversarial agent has run for ≥48 hours continuously. Console live feed shows real adversarial attempts. Playground is a fully conversational insurance assistant with 5 personas, 30-minute session memory, claim filing checklist, and 41 adversarial attack categories (30 original + 11 new Layer 6–targeted).
 
 ---
 

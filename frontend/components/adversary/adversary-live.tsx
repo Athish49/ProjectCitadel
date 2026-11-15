@@ -34,10 +34,11 @@ function fmtRelative(iso: string | null): string {
 }
 
 function AttemptFeedRow({ attempt }: { attempt: AdversarialAttempt }) {
-  const isBreach = attempt.pipeline_verdict === "BREACH";
-  const isError  = attempt.verdict === "API_ERROR";
-  const outcomeLabel = attempt.pipeline_verdict ?? (isBreach ? "BREACH" : isError ? "ERROR" : "BLOCKED");
-  const outcomeColor = isBreach
+  const isBreach  = attempt.pipeline_verdict === "BREACH";
+  const isClean   = attempt.pipeline_verdict === "CLEAN";
+  const isError   = attempt.verdict === "API_ERROR";
+  const outcomeLabel = attempt.pipeline_verdict ?? (isError ? "ERROR" : "BLOCKED");
+  const outcomeColor = isBreach || isClean
     ? "#E5484D"
     : isError || attempt.pipeline_verdict === "PARTIAL"
     ? "#E2A336"
@@ -46,11 +47,11 @@ function AttemptFeedRow({ attempt }: { attempt: AdversarialAttempt }) {
   const layer =
     attempt.blocked_by_layer ??
     attempt.sanitizer_detections[0] ??
-    (isBreach ? "evaded_ingress" : "ingress_pass");
+    (isBreach || isClean ? "all 7 layers" : "ingress_pass");
   const detail = attempt.sanitizer_detections.length > 0
     ? attempt.sanitizer_detections.join(", ")
-    : isBreach
-    ? "no patterns detected — evaded all 7 layers"
+    : isBreach || isClean
+    ? "no defense triggered — payload evaded all 7 layers"
     : "no patterns matched — blocked downstream";
 
   return (
@@ -83,10 +84,15 @@ function AttemptFeedRow({ attempt }: { attempt: AdversarialAttempt }) {
         </span>
       </div>
       <div style={{ fontSize: "11.5px", color: "rgba(255,255,255,0.3)", ...mono, paddingLeft: "1px" }}>
-        {isBreach ? "evaded at " : "blocked at "}
+        {isBreach || isClean ? "evaded " : "blocked at "}
         <span style={{ color: "rgba(255,255,255,0.45)" }}>{layer}</span>
         {" · "}
         <span style={{ color: "rgba(255,255,255,0.25)" }}>{detail}</span>
+        {attempt.trace_id ? (
+          <span style={{ color: "rgba(255,255,255,0.18)", marginLeft: "8px" }}>
+            trace {attempt.trace_id.slice(0, 8)}
+          </span>
+        ) : null}
       </div>
     </div>
   );

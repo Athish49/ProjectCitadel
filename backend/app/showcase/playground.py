@@ -44,6 +44,9 @@ class SubmitRequest(BaseModel):
     attack_id: int | None = None
     attack_category: str | None = None
     attack_category_group: str | None = None
+    chat_session_id: str | None = None
+    persona_key: str | None = None
+    has_attachment: bool = False
 
 
 class SubmitResponse(BaseModel):
@@ -178,6 +181,9 @@ async def submit(req: SubmitRequest, background_tasks: BackgroundTasks, _: None 
         detections=result.detections,
         chars_stripped=result.chars_stripped,
         sanitized=result.labeled.value,
+        chat_session_id=req.chat_session_id,
+        persona_key=req.persona_key,
+        has_attachment=req.has_attachment,
     ))
 
     if req.attack_id is not None:

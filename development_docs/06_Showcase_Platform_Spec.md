@@ -210,6 +210,61 @@ Header always shows:
 
 **Layout: full-width split pane.**
 
+#### 6.2.5 Playground Agent Architecture (Implementation v2)
+
+The playground is a fully conversational insurance assistant, not a stub. Every message flows through all 7 security layers; Layer 6 is now a real Claude Haiku LLM with a playground-specific system prompt.
+
+**Persona system — 5 real accounts:**
+
+| Key | Name | Vehicle | Policy | Claim | Stage |
+|-----|------|---------|--------|-------|-------|
+| `mark` | Mark Martinez | 2018 Honda Civic | LIABILITY / PREMIUM | CLM-000022 | DECIDED |
+| `christina` | Christina Allen | 2023 Subaru Outback | COMPREHENSIVE / STANDARD | CLM-000028 | SETTLED |
+| `ryan` | Ryan Morales | 2023 Chevrolet Silverado | FULL_COVERAGE / BASIC | CLM-000024 | DECIDED |
+| `laura` | Laura Moyer | 2015 Dodge Ram 1500 | FULL_COVERAGE / STANDARD | CLM-000009 | IDENTITY_PENDING |
+| `morgan` | Morgan Lopez | 2018 Audi A4 | COLLISION / STANDARD | CLM-000040 | DENIED |
+
+Clicking the avatar in the session bar opens a persona switcher dropdown. Switching persona resets the conversation and generates a new `chat_session_id`.
+
+**Conversational sessions:**
+- Each browser session generates a UUID `chat_session_id` sent with every POST.
+- The backend maintains per-session conversation history in `session_store.py` (in-memory, 30-minute TTL).
+- Each message also generates a unique `trace_id` for security audit granularity — the two are independent.
+
+**Multi-intent agent — Layer 6 capabilities:**
+1. Answer questions about the customer's policy, coverage, deductible, and vehicle
+2. Check status and details of the active claim
+3. Answer general insurance FAQ and company policy questions (backed by Qdrant)
+4. Guide the customer through filing a new claim (conversational checklist)
+5. Capture and escalate complaints
+
+**Claim filing checklist — 6 required incident fields:**
+The agent already knows the customer's name, policy number, and vehicle from the session context. It collects only:
+1. Incident date
+2. Incident location
+3. Description of what happened
+4. Type of vehicle damage
+5. Whether other parties were involved
+6. Whether a police report was filed
+
+A document attachment is also required. When all 6 fields are present AND a file is attached, the LLM emits a `[CLAIM_READY: {...}]` structured tag. The backend strips this tag, generates a stub reference number (`CLM-XXXXXX`), and appends a confirmation message. Nothing is written to the `claims` table — this is a demo confirmation only. A `claim_submitted` event is written to `audit_log`.
+
+**Privacy — anonymized LLM context:**
+The Layer 6 system prompt receives only anonymized fields: policy type, coverage tier, deductible, CSL, expiry, vehicle make/model/year, claim number, claim stage, incident type, and claim amount. Name, email, VIN, DOB, phone, and all `pii_vault` fields **never reach the LLM**.
+
+**Knowledge base:**
+At startup, the backend lazily loads all points from two Qdrant collections into a cached string blob:
+- `ProjectCitadel-public_faq` (PUBLIC — customer FAQ answers)
+- `ProjectCitadel-policy_docs` (CONFIDENTIAL — policy clauses)
+
+The `ProjectCitadel-fraud_rules` (SECRET) collection is **never fetched** for playground use.
+
+**Auth token protection:**
+All playground routes (`POST /showcase/playground/submit`, `GET /showcase/sse/playground/{trace_id}`, `GET /showcase/playground/profile/{persona_key}`) require the `X-Playground-Token: citadel-demo-2026` header. Requests without it receive `401 Unauthorized`. The token is read from `PLAYGROUND_TOKEN` env var on the backend and `NEXT_PUBLIC_PLAYGROUND_TOKEN` on the frontend.
+
+**Profile endpoint:**
+`GET /showcase/playground/profile/{persona_key}` returns a non-PII JSON bundle (name, city/state, policy fields, vehicle, claim fields) by JOINing `customers`, `policies`, `vehicles`, and `claims`. The frontend fetches this on persona switch to populate the session info bar.
+
 #### 6.2.1 Left pane — Attack composer
 
 Tabbed:

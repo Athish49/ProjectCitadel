@@ -13,14 +13,30 @@ const TAB_ATTACK: Record<AttackComposerTab, { id: number; name: string }> = {
 };
 
 export async function POST(request: NextRequest) {
-  let body: { payload?: string; tab?: string; attackId?: number; attackName?: string } = {};
+  let body: {
+    payload?: string;
+    tab?: string;
+    attackId?: number;
+    attackName?: string;
+    chat_session_id?: string | null;
+    persona_key?: string;
+    has_attachment?: boolean;
+  } = {};
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { payload, tab = "chat", attackId, attackName } = body;
+  const {
+    payload,
+    tab = "chat",
+    attackId,
+    attackName,
+    chat_session_id = null,
+    persona_key = "mark",
+    has_attachment = false,
+  } = body;
 
   if (!payload || typeof payload !== "string" || payload.trim().length === 0) {
     return NextResponse.json({ error: "payload is required" }, { status: 422 });
@@ -37,8 +53,17 @@ export async function POST(request: NextRequest) {
   try {
     const resp = await fetch(`${BACKEND_URL}/showcase/playground/submit`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: payload, attack_id: attack.id }),
+      headers: {
+        "Content-Type": "application/json",
+        "X-Playground-Token": process.env.NEXT_PUBLIC_PLAYGROUND_TOKEN ?? "",
+      },
+      body: JSON.stringify({
+        message: payload,
+        attack_id: attack.id,
+        chat_session_id,
+        persona_key,
+        has_attachment,
+      }),
       signal: AbortSignal.timeout(10_000),
     });
 

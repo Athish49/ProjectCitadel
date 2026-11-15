@@ -24,13 +24,15 @@ interface Message {
   time: string;
 }
 
-const PERSONA: Persona = PERSONAS[0];
-
 export function PlaygroundApp() {
-  const p = PERSONA;
+  const pathname = usePathname();
+
+  const [activePersona, setActivePersona] = useState<Persona>(PERSONAS[0]);
+  const [showPersonaSwitcher, setShowPersonaSwitcher] = useState(false);
+
+  const p = activePersona;
   const templates = makeTemplates(p);
   const first = p.name.split(" ")[0];
-  const pathname = usePathname();
 
   const { trace, isStreaming, error, submit } = usePlaygroundStream();
 
@@ -39,9 +41,12 @@ export function PlaygroundApp() {
   const [thinking, setThinking] = useState(false);
   const [copied, setCopied] = useState(false);
   const [activeCategory, setActiveCategory] = useState<"text" | "pdf" | "image">("text");
+  const [hasAttachment, setHasAttachment] = useState<boolean>(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const thinkTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const switcherRef = useRef<HTMLDivElement>(null);
+  const chatSessionId = useRef<string>(crypto.randomUUID());
   // Track which verdicts have been surfaced as agent replies to avoid duplicates
   const verdictKeyRef = useRef<string | null>(null);
 
@@ -51,11 +56,23 @@ export function PlaygroundApp() {
       from: "agent",
       isText: true,
       isFile: false,
-      text: `Hi ${first}, I can help file a new claim or answer questions about ${p.claim}. What's going on?`,
+      text: `Hi ${first}, I can help file a new claim or answer questions about ${p.claimNumber}. What's going on?`,
       time: "now",
     }]);
     return () => { if (thinkTimer.current) clearTimeout(thinkTimer.current); };
   }, []);
+
+  // Close persona switcher on outside click
+  useEffect(() => {
+    if (!showPersonaSwitcher) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (switcherRef.current && !switcherRef.current.contains(e.target as Node)) {
+        setShowPersonaSwitcher(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showPersonaSwitcher]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -96,7 +113,11 @@ export function PlaygroundApp() {
     if (!text || isStreaming) return;
     pushUserMessage({ who: p.name, from: "user", isText: true, isFile: false, text });
     setDraft("");
-    submit(text, "chat", "intake", "live");
+    submit(text, "chat", "intake", "live", undefined, {
+      chatSessionId: chatSessionId.current,
+      personaKey: activePersona.key,
+      hasAttachment,
+    });
   }
 
   function runTemplate(spec: TemplateSpec) {
@@ -108,7 +129,11 @@ export function PlaygroundApp() {
     pushUserMessage(bubble);
     const tab: AttackComposerTab = spec.kind === "text" ? "chat" : spec.kind;
     const payload = spec.kind === "text" ? spec.userText : (spec.userText || spec.fileName || "file");
-    submit(payload, tab, "intake", "live");
+    submit(payload, tab, "intake", "live", undefined, {
+      chatSessionId: chatSessionId.current,
+      personaKey: activePersona.key,
+      hasAttachment,
+    });
   }
 
   function onFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
@@ -117,23 +142,51 @@ export function PlaygroundApp() {
     if (!file || isStreaming) return;
     const tab: AttackComposerTab = file.type.startsWith("image/") ? "image" : "pdf";
     pushUserMessage({ who: p.name, from: "user", isText: false, isFile: true, fileName: file.name });
-    submit(file.name, tab, "intake", "live");
+    setHasAttachment(true);
+    submit(file.name, tab, "intake", "live", undefined, {
+      chatSessionId: chatSessionId.current,
+      personaKey: activePersona.key,
+      hasAttachment: true,
+    });
   }
 
   function newSession() {
     if (thinkTimer.current) clearTimeout(thinkTimer.current);
     verdictKeyRef.current = null;
+    chatSessionId.current = crypto.randomUUID();
     setMessages([{
       who: "Assistant",
       from: "agent",
       isText: true,
       isFile: false,
-      text: `Hi ${first}, I can help file a new claim or answer questions about ${p.claim}. What's going on?`,
+      text: `Hi ${first}, I can help file a new claim or answer questions about ${p.claimNumber}. What's going on?`,
       time: "now",
     }]);
     setDraft("");
     setThinking(false);
     setCopied(false);
+    setHasAttachment(false);
+  }
+
+  function switchPersona(persona: Persona) {
+    const newFirst = persona.name.split(" ")[0];
+    setActivePersona(persona);
+    setShowPersonaSwitcher(false);
+    if (thinkTimer.current) clearTimeout(thinkTimer.current);
+    verdictKeyRef.current = null;
+    chatSessionId.current = crypto.randomUUID();
+    setMessages([{
+      who: "Assistant",
+      from: "agent",
+      isText: true,
+      isFile: false,
+      text: `Hi ${newFirst}, I can help file a new claim or answer questions about ${persona.claimNumber}. What's going on?`,
+      time: "now",
+    }]);
+    setDraft("");
+    setThinking(false);
+    setCopied(false);
+    setHasAttachment(false);
   }
 
   // ── Derived display state ────────────────────────────────────────────────────
@@ -259,13 +312,38 @@ export function PlaygroundApp() {
         {/* SESSION BAR */}
         <div style={{ borderBottom: "1px solid rgba(255,255,255,0.08)", background: "#0B0C0E", flexShrink: 0, minWidth: 0 }}>
           <div style={{ maxWidth: "1400px", margin: "0 auto", padding: "14px 32px", display: "flex", alignItems: "center", gap: "14px", minWidth: 0 }}>
-            <span style={{ display: "inline-flex", width: "34px", height: "34px", borderRadius: "50%", background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.14)", alignItems: "center", justifyContent: "center", fontFamily: "var(--font-geist-mono), monospace", fontSize: "13px", fontWeight: 600, color: "rgba(255,255,255,0.85)", flexShrink: 0 }}>{p.initial}</span>
+            {/* Avatar + persona switcher */}
+            <div ref={switcherRef} style={{ position: "relative", flexShrink: 0 }}>
+              <span
+                onClick={() => setShowPersonaSwitcher((v) => !v)}
+                title="Switch persona"
+                style={{ display: "inline-flex", width: "34px", height: "34px", borderRadius: "50%", background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.14)", alignItems: "center", justifyContent: "center", fontFamily: "var(--font-geist-mono), monospace", fontSize: "13px", fontWeight: 600, color: "rgba(255,255,255,0.85)", cursor: "pointer", userSelect: "none" }}
+              >
+                {p.initial}
+              </span>
+              {showPersonaSwitcher && (
+                <div style={{ position: "absolute", top: "calc(100% + 8px)", left: 0, zIndex: 50, background: "#141518", border: "1px solid rgba(255,255,255,0.14)", borderRadius: "8px", minWidth: "220px", overflow: "hidden", boxShadow: "0 8px 24px rgba(0,0,0,0.5)" }}>
+                  {PERSONAS.map((persona) => (
+                    <button
+                      key={persona.key}
+                      onClick={() => switchPersona(persona)}
+                      style={{ display: "block", width: "100%", textAlign: "left", padding: "10px 14px", background: persona.key === p.key ? "rgba(255,255,255,0.07)" : "transparent", border: "none", borderBottom: "1px solid rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.85)", cursor: "pointer", fontFamily: "var(--font-geist), sans-serif" }}
+                      onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.07)"; }}
+                      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = persona.key === p.key ? "rgba(255,255,255,0.07)" : "transparent"; }}
+                    >
+                      <div style={{ fontSize: "13px", fontWeight: 600 }}>{persona.name}</div>
+                      <div style={{ fontSize: "11.5px", color: "rgba(255,255,255,0.42)", marginTop: "2px", fontFamily: "var(--font-geist-mono), monospace" }}>{persona.vehicle}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             <div style={{ minWidth: 0 }}>
               <div style={{ fontSize: "13.5px", fontWeight: 600, color: "rgba(255,255,255,0.92)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                 {p.name} <span style={{ fontWeight: 400, color: "rgba(255,255,255,0.4)" }}>· {p.vehicle}</span>
               </div>
               <div style={{ fontFamily: "var(--font-geist-mono), monospace", fontSize: "11.5px", color: "rgba(255,255,255,0.42)", marginTop: "3px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                member {p.memberId} · policy {p.policy} · active claim {p.claim}
+                {p.policyType} · {p.coverageType} · claim {p.claimNumber} · {p.claimStage}
               </div>
             </div>
           </div>
