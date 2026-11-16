@@ -1,6 +1,6 @@
 # Residual Risk Register
 
-Risks that remain after all implemented controls in the SecureClaim AI system.
+Risks that remain after all implemented controls in the Project Citadel system.
 Each entry documents the residual exposure, why it was not fully eliminated,
 and the production mitigation in place.
 

@@ -96,11 +96,15 @@ async def _generate():
             yield f"event: history\ndata: {json.dumps(history)}\n\n"
 
             # ── All-time breach stats from DB ────────────────────────────────
+            # Note: pipeline_verdict is never literally "BREACH" — the pipeline
+            # itself only ever emits BLOCKED|HELD|CLEAN|ERROR. A breach is the
+            # separately-tracked is_breach flag (true only for an attack-tagged
+            # submission whose pipeline_verdict came back CLEAN).
             await cur.execute(
                 "SELECT"
                 "  COUNT(*) AS total,"
-                "  COALESCE(SUM(CASE WHEN pipeline_verdict = 'BREACH' THEN 1 ELSE 0 END), 0) AS breaches,"
-                "  MAX(CASE WHEN pipeline_verdict = 'BREACH' THEN ts END) AS last_breach_at "
+                "  COALESCE(SUM(CASE WHEN is_breach THEN 1 ELSE 0 END), 0) AS breaches,"
+                "  MAX(CASE WHEN is_breach THEN ts END) AS last_breach_at "
                 "FROM adversarial_attack_logs"
             )
             s = await cur.fetchone()

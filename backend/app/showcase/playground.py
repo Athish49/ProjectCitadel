@@ -184,15 +184,21 @@ async def submit(req: SubmitRequest, background_tasks: BackgroundTasks, _: None 
         chat_session_id=req.chat_session_id,
         persona_key=req.persona_key,
         has_attachment=req.has_attachment,
+        attack_id=req.attack_id,
     ))
 
     if req.attack_id is not None:
         sse_verdict = "EVADED_INGRESS" if verdict == "clean" else "BLOCKED_INGRESS"
-        background_tasks.add_task(
-            _write_attack_log,
+        # Awaited directly (not a BackgroundTask) so the INSERT is committed
+        # before the client can possibly open the SSE pipeline stream and race
+        # the later UPDATE in playground_sse.py against this row's creation —
+        # a BackgroundTask only runs after the response is sent, by which point
+        # a fast ingress/pattern block could already have tried (and missed)
+        # the UPDATE.
+        await _write_attack_log(
             trace_id, session_id, req.attack_id,
             sse_verdict, result.detections, result.chars_stripped,
-            False,   # is_breach: unknown at ingress time; pipeline_verdict updated later by agent
+            False,   # is_breach: unknown at ingress time; pipeline_verdict updated later by the pipeline
             req.message, req.attack_category, req.attack_category_group,
         )
         # GitHub issue removed: breach determination now requires full 7-layer pipeline verdict

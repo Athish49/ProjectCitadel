@@ -1,5 +1,5 @@
 ---------------------------- MODULE workflow ----------------------------
-\* Formal specification of the SecureClaim claim-workflow state machine.
+\* Formal specification of the Project Citadel claim-workflow state machine.
 \* Derived from agent_system/orchestrator/transitions.py — _VALID_EDGES and
 \* _check_guard().  Sprint 5.2.1.
 \*

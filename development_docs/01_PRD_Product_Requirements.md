@@ -1,4 +1,4 @@
-# SecureClaim AI — Product Requirements Document (PRD)
+# Project Citadel — Product Requirements Document (PRD)
 
 **Version:** 2.0
 **Date:** May 27, 2026
@@ -10,7 +10,7 @@
 
 ## 1. Executive Summary
 
-SecureClaim AI is a **security-first multi-agent reference architecture** built to demonstrate resilience against a 79-category curated taxonomy of agentic AI attacks. The system uses an auto-insurance claims pipeline as a realistic vehicle for adversarial testing — the domain is incidental; the architectural patterns and measured defenses are the product.
+Project Citadel is a **security-first multi-agent reference architecture** built to demonstrate resilience against a 79-category curated taxonomy of agentic AI attacks. The system uses an auto-insurance claims pipeline as a realistic vehicle for adversarial testing — the domain is incidental; the architectural patterns and measured defenses are the product.
 
 The artifact has two halves:
 

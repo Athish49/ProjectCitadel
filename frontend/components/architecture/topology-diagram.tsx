@@ -2,304 +2,183 @@
 
 import { useState } from "react";
 import {
-  DIAG_NODES, DIAG_EDGES, DIAG_ZONES, DIAG_LEGEND,
-  NODE_W, NODE_H, SVG_W, SVG_H,
+  MAP_W, MAP_H, MAP_ZONES, MAP_FLOW_LABELS, MAP_NODES,
+  MAP_REPLY_BOX, MAP_REPLY_CAPTION, MAP_AUDIT_NODE, MAP_EDGES,
+  NODE_INFO, NODE_DEFAULT,
 } from "@/lib/data/architecture";
+import { Seg } from "@/components/architecture/diagram-primitives";
+import styles from "@/components/architecture/architecture.module.css";
+
+const NODE_W = 128;
+const NODE_H = 48;
+const EDGE_COLOR = "rgba(255,255,255,0.38)";
 
 export function TopologyDiagram() {
-  const [selectedNode, setSelectedNode] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
 
-  function toggleNode(id: string) {
-    setSelectedNode((prev) => (prev === id ? null : id));
-  }
-  function clearSelection() {
-    setSelectedNode(null);
-  }
-
-  // Compute which node ids are neighbors of selected
-  const neighborIds = new Set<string>();
-  if (selectedNode) {
-    DIAG_EDGES.forEach((e) => {
-      if (e.from === selectedNode || e.to === selectedNode) {
-        neighborIds.add(e.from);
-        neighborIds.add(e.to);
-      }
-    });
-  }
-
-  // Inspector content
-  const sel = selectedNode ? DIAG_NODES.find((n) => n.id === selectedNode) : null;
-  const selZone = sel ? DIAG_ZONES.find((z) => z.id === sel.zone) : null;
-  const inspectorLead = sel
-    ? sel.sub
-    : "Five trust zones, left to right. Each boundary is enforced by code, not convention.";
-  const inspectorItems = sel && selZone
-    ? [{ title: sel.name, body: sel.detail, color: selZone.color }]
-    : DIAG_ZONES.map((z) => ({ title: z.label.toUpperCase(), body: z.desc, color: z.color }));
+  const info = selected ? NODE_INFO[selected] : NODE_DEFAULT;
+  const metaParts = [info.zone, info.pattern ? `· PATTERN ${info.pattern}` : ""].filter(Boolean);
+  const nodeMeta = metaParts.join(" ").toUpperCase();
 
   return (
-    <div style={{ border: "1px solid rgba(255,255,255,0.09)", background: "#0C0D0F" }}>
-      {/* header */}
-      <div
-        style={{
-          padding: "14px 20px",
-          borderBottom: "1px solid rgba(255,255,255,0.07)",
-          display: "flex", justifyContent: "space-between", alignItems: "center",
-          flexWrap: "wrap", gap: "12px",
-        }}
-      >
-        <span
-          style={{
-            fontFamily: "var(--font-geist-mono), monospace",
-            fontSize: "11px", letterSpacing: "0.1em",
-            color: "rgba(255,255,255,0.4)",
-          }}
-        >
-          TOPOLOGY · 14 NODES · 5 TRUST ZONES
-        </span>
-        <span
-          style={{
-            display: "flex", alignItems: "center", gap: "8px",
-            fontFamily: "var(--font-geist-mono), monospace",
-            fontSize: "11px", color: "#3ECF8E",
-          }}
-        >
-          <span
+    <div className="panel" style={{ marginTop: 0 }}>
+      <div style={{ overflowX: "auto", padding: "24px 20px 26px" }}>
+        <div style={{ position: "relative", width: MAP_W, height: MAP_H, margin: "0 auto" }}>
+          {/* zone backgrounds */}
+          {MAP_ZONES.map((z) => (
+            <div
+              key={z.label}
+              style={{
+                position: "absolute",
+                left: z.x,
+                top: 30,
+                width: z.w,
+                height: 480,
+                boxSizing: "border-box",
+                background: "rgba(255,255,255,0.025)",
+                border: "1px solid rgba(255,255,255,0.07)",
+                borderRadius: "6px",
+              }}
+            />
+          ))}
+
+          {/* edges */}
+          {MAP_EDGES.map((e, i) => (
+            <Seg
+              key={i}
+              x={e.x} y={e.y} w={e.w} h={e.h} d={e.d}
+              color={EDGE_COLOR}
+              markerId={`arch-map-ah-${i}`}
+              arrow={e.arrow}
+              hidden={e.hidden}
+              label={e.label}
+            />
+          ))}
+
+          {/* zone labels + sub-labels */}
+          {MAP_ZONES.map((z) => (
+            <div key={`${z.label}-lbl`}>
+              <div
+                className="mono"
+                style={{
+                  position: "absolute", left: z.x + 6, top: 44, width: z.w - 12,
+                  textAlign: "center", fontSize: 11, lineHeight: "16px",
+                  color: "rgba(255,255,255,0.9)", letterSpacing: "0.1em", textTransform: "uppercase",
+                }}
+              >
+                {z.label}
+              </div>
+              <div
+                style={{
+                  position: "absolute", left: z.x + 6, top: 64, width: z.w - 12,
+                  textAlign: "center", fontSize: 12, lineHeight: "16px", color: z.subColor,
+                }}
+              >
+                {z.sub}
+              </div>
+            </div>
+          ))}
+
+          {/* data-flow labels along the top */}
+          {MAP_FLOW_LABELS.map((f) => (
+            <div
+              key={f.text}
+              style={{
+                position: "absolute", left: f.x, top: 6, width: f.w,
+                textAlign: "center", fontSize: 12.5, lineHeight: "16px", color: "rgba(255,255,255,0.72)",
+              }}
+            >
+              {f.text}
+            </div>
+          ))}
+
+          {/* nodes */}
+          {MAP_NODES.map((n) => {
+            const on = selected === n.id;
+            const bg = on ? "#f4f4f5" : "#101114";
+            const bd = on ? "#f4f4f5" : "rgba(255,255,255,0.14)";
+            const fg = on ? "#0a0b0c" : "rgba(255,255,255,0.92)";
+            return (
+              <button
+                key={n.id}
+                type="button"
+                className={styles.node}
+                aria-pressed={on}
+                onClick={() => setSelected((prev) => (prev === n.id ? null : n.id))}
+                style={{
+                  position: "absolute", left: n.x, top: n.y, width: NODE_W, height: NODE_H,
+                  boxSizing: "border-box", padding: "8px 10px",
+                  display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center",
+                  background: bg, border: `1px solid ${bd}`, borderRadius: "6px",
+                  color: fg, fontSize: 13, lineHeight: 1.3,
+                }}
+              >
+                <span>{n.name}</span>
+              </button>
+            );
+          })}
+
+          {/* reply-to-user (non-interactive) */}
+          <div
             style={{
-              width: "6px", height: "6px", borderRadius: "50%",
-              background: "#3ECF8E",
-              animation: "citadel-pulse 2.2s ease-in-out infinite",
+              position: "absolute", left: MAP_REPLY_BOX.x, top: MAP_REPLY_BOX.y,
+              width: MAP_REPLY_BOX.w, height: MAP_REPLY_BOX.h,
+              boxSizing: "border-box", padding: "8px 10px",
+              display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center",
+              background: "transparent", border: "1px solid rgba(255,255,255,0.14)", borderRadius: "6px",
+              color: "rgba(255,255,255,0.8)", fontSize: 13, lineHeight: 1.3,
             }}
-          />
-          LIVE TRAFFIC
-        </span>
+          >
+            <span>{MAP_REPLY_BOX.label}</span>
+          </div>
+          <div
+            style={{
+              position: "absolute", left: MAP_REPLY_CAPTION.x, top: MAP_REPLY_CAPTION.y, width: MAP_REPLY_CAPTION.w,
+              textAlign: "center", fontSize: 12.5, lineHeight: "16px", color: "rgba(255,255,255,0.72)",
+            }}
+          >
+            {MAP_REPLY_CAPTION.text}
+          </div>
+
+          {/* audit log (full width, interactive) */}
+          <button
+            type="button"
+            className={styles.node}
+            aria-pressed={selected === MAP_AUDIT_NODE.id}
+            onClick={() => setSelected((prev) => (prev === MAP_AUDIT_NODE.id ? null : MAP_AUDIT_NODE.id))}
+            style={{
+              position: "absolute", left: MAP_AUDIT_NODE.x, top: MAP_AUDIT_NODE.y,
+              width: MAP_AUDIT_NODE.w, height: MAP_AUDIT_NODE.h,
+              boxSizing: "border-box", padding: "8px 10px",
+              display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center",
+              background: selected === MAP_AUDIT_NODE.id ? "#f4f4f5" : "#101114",
+              border: `1px solid ${selected === MAP_AUDIT_NODE.id ? "#f4f4f5" : "rgba(255,255,255,0.14)"}`,
+              borderRadius: "6px",
+              color: selected === MAP_AUDIT_NODE.id ? "#0a0b0c" : "rgba(255,255,255,0.92)",
+              fontSize: 13, lineHeight: 1.3,
+            }}
+          >
+            <span>{MAP_AUDIT_NODE.label}</span>
+          </button>
+        </div>
       </div>
 
-      {/* body: diagram + inspector */}
+      {/* inspector footer */}
       <div
-        data-two-col
-        style={{ display: "grid", gridTemplateColumns: "1.65fr 1fr" }}
+        style={{
+          padding: "22px 22px 24px", borderTop: "1px solid rgba(255,255,255,0.08)",
+          display: "flex", flexWrap: "wrap", gap: "8px 32px", alignItems: "baseline", minHeight: "104px",
+        }}
       >
-        {/* diagram */}
-        <div
-          style={{
-            borderRight: "1px solid rgba(255,255,255,0.07)",
-            padding: "26px",
-            overflowX: "auto",
-          }}
-        >
-          <div
-            style={{
-              position: "relative",
-              width: "100%",
-              minWidth: "560px",
-              aspectRatio: `${SVG_W} / ${SVG_H}`,
-            }}
-          >
-            {/* SVG edges + animated dots */}
-            <svg
-              viewBox={`0 0 ${SVG_W} ${SVG_H}`}
-              style={{
-                position: "absolute", inset: 0,
-                width: "100%", height: "100%",
-                overflow: "visible",
-              }}
-            >
-              <defs>
-                <filter id="citadel-node-glow" x="-200%" y="-200%" width="500%" height="500%">
-                  <feGaussianBlur stdDeviation="2.4" result="b" />
-                  <feMerge>
-                    <feMergeNode in="b" />
-                    <feMergeNode in="SourceGraphic" />
-                  </feMerge>
-                </filter>
-              </defs>
-
-              {DIAG_EDGES.map((e, i) => {
-                const isConnected = selectedNode && (e.from === selectedNode || e.to === selectedNode);
-                const dim = selectedNode && !isConnected;
-                const opacity = dim ? 0.08 : isConnected ? 0.9 : 0.4;
-                const dotOpacity = dim ? 0.15 : 1;
-                const strokeWidth = isConnected ? 2 : 1;
-                const dur = 2.4 + (i % 5) * 0.5;
-                const begin = -(i * 0.35);
-                return (
-                  <g key={e.id}>
-                    <path
-                      d={e.d}
-                      fill="none"
-                      stroke={e.color}
-                      strokeWidth={strokeWidth}
-                      opacity={opacity}
-                    />
-                    <circle r="3.2" fill={e.color} filter="url(#citadel-node-glow)" opacity={dotOpacity}>
-                      <animateMotion
-                        dur={`${dur}s`}
-                        begin={`${begin}s`}
-                        repeatCount="indefinite"
-                        path={e.d}
-                      />
-                    </circle>
-                  </g>
-                );
-              })}
-            </svg>
-
-            {/* zone labels */}
-            {DIAG_ZONES.map((zn) => (
-              <div
-                key={zn.id}
-                style={{
-                  position: "absolute",
-                  left: `${(zn.x / SVG_W) * 100}%`,
-                  top: 0,
-                  width: `calc(${(zn.w / SVG_W) * 100}% - 6px)`,
-                  height: "30px",
-                  fontFamily: "var(--font-geist-mono), monospace",
-                  fontSize: "9px", lineHeight: 1.35,
-                  letterSpacing: "0.07em", textTransform: "uppercase",
-                  color: zn.color,
-                  pointerEvents: "none",
-                }}
-              >
-                {zn.label}
-              </div>
-            ))}
-
-            {/* nodes */}
-            {DIAG_NODES.map((nd) => {
-              const zone = DIAG_ZONES.find((z) => z.id === nd.zone)!;
-              const isSel = selectedNode === nd.id;
-              const isNeighbor = !!selectedNode && neighborIds.has(nd.id) && !isSel;
-              const dim = !!selectedNode && !isSel && !isNeighbor;
-              const borderColor = isSel || isNeighbor ? zone.color : "rgba(255,255,255,0.14)";
-              return (
-                <div
-                  key={nd.id}
-                  onClick={() => toggleNode(nd.id)}
-                  style={{
-                    position: "absolute",
-                    left: `${(nd.x / SVG_W) * 100}%`,
-                    top: `${(nd.y / SVG_H) * 100}%`,
-                    width: `${(NODE_W / SVG_W) * 100}%`,
-                    height: `${(NODE_H / SVG_H) * 100}%`,
-                    border: `1px solid ${borderColor}`,
-                    background: isSel ? "rgba(255,255,255,0.05)" : "#0A0B0C",
-                    padding: "8px 10px",
-                    boxSizing: "border-box",
-                    cursor: "pointer",
-                    transition: "all 0.25s ease",
-                    opacity: dim ? 0.4 : 1,
-                    boxShadow: isSel
-                      ? `0 0 0 1px ${zone.color}, 0 0 18px -2px ${zone.color}`
-                      : undefined,
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!isSel) (e.currentTarget as HTMLElement).style.borderColor = zone.color;
-                    (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.035)";
-                  }}
-                  onMouseLeave={(ev) => {
-                    if (!isSel) (ev.currentTarget as HTMLElement).style.borderColor = borderColor;
-                    (ev.currentTarget as HTMLElement).style.background = isSel ? "rgba(255,255,255,0.05)" : "#0A0B0C";
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: "11.5px", fontWeight: 600,
-                      color: "rgba(255,255,255,0.92)", lineHeight: 1.25,
-                    }}
-                  >
-                    {nd.name}
-                  </div>
-                  <div
-                    style={{
-                      fontFamily: "var(--font-geist-mono), monospace",
-                      fontSize: "9px", letterSpacing: "0.03em",
-                      color: zone.color, marginTop: "3px",
-                    }}
-                  >
-                    {nd.sub}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* legend */}
-          <div
-            style={{
-              display: "flex", gap: "22px",
-              marginTop: "20px", flexWrap: "wrap",
-              fontFamily: "var(--font-geist-mono), monospace",
-              fontSize: "11px", color: "rgba(255,255,255,0.45)",
-            }}
-          >
-            {DIAG_LEGEND.map((lg) => (
-              <span key={lg.label} style={{ display: "inline-flex", alignItems: "center", gap: "7px" }}>
-                <span
-                  style={{
-                    width: "14px", height: "1.5px",
-                    background: lg.color, display: "inline-block",
-                  }}
-                />
-                {lg.label}
-              </span>
-            ))}
+        <div style={{ flex: "0 0 220px" }}>
+          <div style={{ fontSize: 17, fontWeight: 500 }}>{info.name}</div>
+          <div className="mono" style={{ marginTop: 6, fontSize: 11.5, letterSpacing: "0.08em", color: "rgba(255,255,255,0.58)" }}>
+            {nodeMeta}
           </div>
         </div>
-
-        {/* inspector */}
-        <div style={{ padding: "22px", display: "flex", flexDirection: "column", gap: "6px" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <span
-              style={{
-                fontFamily: "var(--font-geist-mono), monospace",
-                fontSize: "11px", letterSpacing: "0.1em",
-                color: "rgba(255,255,255,0.4)",
-              }}
-            >
-              NODE INSPECTOR
-            </span>
-            {selectedNode && (
-              <button
-                onClick={clearSelection}
-                className="btn-ghost"
-                style={{
-                  fontFamily: "var(--font-geist-mono), monospace",
-                  fontSize: "10.5px", padding: "4px 9px", borderRadius: "5px",
-                  cursor: "pointer",
-                }}
-              >
-                ✕ clear
-              </button>
-            )}
-          </div>
-
-          <div style={{ fontSize: "13px", color: "rgba(255,255,255,0.42)", margin: "6px 0 10px", lineHeight: 1.6 }}>
-            {inspectorLead}
-          </div>
-
-          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-            {inspectorItems.map((ii) => (
-              <div key={ii.title} style={{ borderLeft: `2px solid ${ii.color}`, paddingLeft: "14px" }}>
-                <div
-                  style={{
-                    fontFamily: "var(--font-geist-mono), monospace",
-                    fontSize: "11.5px", fontWeight: 600,
-                    letterSpacing: "0.04em", color: "rgba(255,255,255,0.9)",
-                  }}
-                >
-                  {ii.title}
-                </div>
-                <div
-                  style={{ fontSize: "12.5px", color: "rgba(255,255,255,0.5)", lineHeight: 1.55, marginTop: "4px" }}
-                >
-                  {ii.body}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+        <p style={{ margin: 0, flex: "1 1 420px", fontSize: 16.5, lineHeight: 1.45, maxWidth: 760 }}>
+          {info.detail}
+        </p>
       </div>
     </div>
   );

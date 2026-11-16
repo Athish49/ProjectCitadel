@@ -1,4 +1,4 @@
-# SecureClaim AI — Data Model & Schema Document
+# Project Citadel — Data Model & Schema Document
 
 **Version:** 2.2
 **Date:** July 12, 2026

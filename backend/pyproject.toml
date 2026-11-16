@@ -1,7 +1,7 @@
 [project]
 name = "secureclaim-backend"
 version = "0.1.0"
-description = "SecureClaim AI backend — resilient multi-agent insurance claims system."
+description = "Project Citadel backend — resilient multi-agent insurance claims system."
 readme = "README.md"
 requires-python = ">=3.13"
 license = { text = "Proprietary" }

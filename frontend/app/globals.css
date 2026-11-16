@@ -1,7 +1,7 @@
 @import "tailwindcss";
 @plugin "tailwindcss-animate";
 
-/* ── Design tokens — derived from design-file-overview HTML prototypes ──────── */
+/* ── Design tokens — Project Citadel website redesign (2026-11) ───────────────── */
 :root {
   /* Background scale */
   --bg-base:    #0A0B0C;   /* primary page bg */
@@ -183,7 +183,131 @@ a:hover {
 /* Pattern defeat chip hover */
 .defeat-chip:hover { border-color: rgba(62,207,142,0.5) !important; color: #ffffff !important; }
 
+/* ── Redesign (2026-11) shared chrome classes ──────────────────────────────────
+   Common building blocks used identically across every page of the redesign
+   (nav, footer, buttons, panels). Page-specific variants (section padding,
+   heading scale, label opacity) differ slightly per artboard — pages apply
+   those as inline style overrides rather than new global classes. */
+.mono { font-family: var(--font-geist-mono), ui-monospace, monospace; }
+.eb {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.55);
+}
+.nl:hover { color: #fff !important; }
+.nl[aria-current] { color: #fff; }
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 18px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.2s, border-color 0.2s, transform 0.2s;
+}
+.btn-p { background: #f4f4f5; color: #0a0b0c; }
+.btn-p:hover { background: #fff; color: #0a0b0c; transform: translateY(-1px); }
+.btn-g { background: transparent; color: rgba(255,255,255,0.95); border-color: rgba(255,255,255,0.16); }
+.btn-g:hover { border-color: rgba(255,255,255,0.4); }
+.btn:focus-visible, .nl:focus-visible, .pick:focus-visible {
+  outline: 2px solid #5b8def;
+  outline-offset: 2px;
+}
+.panel { border: 1px solid rgba(255,255,255,0.08); background: #0c0d0f; }
+.ph {
+  padding: 13px 18px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px 12px;
+  align-items: center;
+}
+.cell { background: #0a0b0c; }
+.pick {
+  appearance: none;
+  font: inherit;
+  color: rgba(255,255,255,0.85);
+  cursor: pointer;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 4px;
+  background: transparent;
+  padding: 0 12px;
+  min-height: 40px;
+  font-size: 13px;
+  transition: border-color 0.2s, background 0.2s;
+}
+.pick:hover { border-color: rgba(255,255,255,0.35); }
+.sec { max-width: 1264px; margin: 0 auto; padding: clamp(72px,8vw,120px) 32px 0; }
+.h2 {
+  margin: 16px 0 0;
+  font-size: clamp(26px,3vw,38px);
+  line-height: 1.08;
+  letter-spacing: -0.03em;
+  font-weight: 600;
+}
+.lead { margin: 12px 0 0; font-size: 16px; color: rgba(255,255,255,0.7); max-width: 560px; }
+
+/* ── Redesign (2026-11) scroll-reveal system ───────────────────────────────────
+   Shared across all page bodies implementing the Project Citadel website
+   redesign. A page sets data-anim="on" on its root (client-side, after
+   checking prefers-reduced-motion) and observes [data-rv] elements with an
+   IntersectionObserver, flipping on [data-in] when they enter view. */
+[data-anim="on"] [data-rv] {
+  opacity: 0;
+  transform: translateY(16px);
+  transition: opacity 0.7s ease, transform 0.7s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+[data-anim="on"] [data-rv][data-in] {
+  opacity: 1;
+  transform: none;
+}
+[data-anim="on"] [data-grow] {
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 1s cubic-bezier(0.2, 0.7, 0.2, 1) 0.2s;
+}
+[data-anim="on"] [data-in] [data-grow] {
+  transform: none;
+}
+
+/* Small live/status indicator dot (green pulse) */
+.live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ok);
+  display: inline-block;
+  animation: citadel-dot-pulse 2.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .live-dot { animation: none; }
+}
+
 /* ── Keyframes ──────────────────────────────────────────────────────────────── */
+@keyframes citadel-dot-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.35; }
+}
+
+@keyframes citadel-fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+
+@keyframes citadel-row-in {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: none; }
+}
+
 @keyframes citadel-pulse {
   0%   { opacity: 0.4; }
   50%  { opacity: 1; }

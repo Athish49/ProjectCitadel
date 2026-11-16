@@ -39,6 +39,21 @@ _ADVERSARIAL_THRESHOLD = 0.7
 _CLASSIFIER_MODEL = "claude-haiku-4-5-20251001"
 _CLAIM_READY_RE = re.compile(r'\[CLAIM_READY:.*?\]', re.DOTALL)
 
+# Strict capture — only a well-formed tag yields a reason slug.
+_POLICY_HELD_RE = re.compile(r'\[POLICY_HELD:\s*([a-z_]+)\]')
+# Looser strip — catches a malformed tag (stray capitals, punctuation, etc.)
+# so a raw tag never reaches the user even if the model doesn't format it exactly.
+_POLICY_HELD_STRIP_RE = re.compile(r'\[POLICY_HELD:[^\]]*\]')
+# Fixed vocabulary the actor is instructed to choose from. Anything else the
+# model emits is normalised to the "out_of_scope_request" catch-all.
+_POLICY_HELD_REASONS: frozenset[str] = frozenset({
+    "cannot_approve_own_claim",
+    "cannot_reveal_fraud_score",
+    "cannot_access_other_customer_data",
+    "cannot_disclose_identifiers",
+    "out_of_scope_request",
+})
+
 # Ephemeral orchestrator keypair — pure-Python crypto, safe at module level
 _ORCHESTRATOR_KM = KeypairManager.generate("orchestrator")
 
@@ -164,10 +179,50 @@ RULES:
   - Do not recite policy numbers, member IDs, VINs, SSNs, or bank details —
     direct the customer to the account panel for those details.
   - If a request is outside your capabilities, say so clearly and offer alternatives.
-  - Keep responses concise and professional. Do not use excessive bullet points."""
+  - Keep responses concise and professional. Do not use excessive bullet points.
+
+POLICY DECLINE TAG:
+  When — and ONLY when — you decline a request specifically because it violates one of
+  the RULES above (not because you simply don't know the answer, and not alongside a
+  request you otherwise answered), end your reply with EXACTLY one tag from this fixed
+  set, with no spaces before the bracket:
+    [POLICY_HELD: cannot_approve_own_claim]          — asked to approve/authorize/pay out their own claim
+    [POLICY_HELD: cannot_reveal_fraud_score]         — asked for a fraud score, risk score, or fraud factors
+    [POLICY_HELD: cannot_access_other_customer_data] — asked about another customer's policy, claim, or status.
+      This ALWAYS applies when the customer names a claim or policy number that does not match the one in
+      your ACTIVE SESSION CONTEXT above — treat any other claim/policy number as belonging to a different
+      customer by default, even if the request doesn't say so explicitly or sounds like it could be a typo.
+      Never substitute, guess at, or "helpfully" look up a different claim number than the one on file —
+      decline clearly and use this tag.
+    [POLICY_HELD: cannot_disclose_identifiers]       — asked to recite a policy number, member ID, VIN, SSN, or bank details
+    [POLICY_HELD: out_of_scope_request]              — any other request you must decline as outside your capabilities
+  Example: "I'm not able to approve or release claim payments myself — that decision goes
+  through our claims team, who I can notify if you'd like.
+  [POLICY_HELD: cannot_approve_own_claim]"
+  Never emit this tag for an ordinary "I don't know" answer, and never emit it when the
+  request was successfully fulfilled."""
 
 
 # ── SSE helpers ───────────────────────────────────────────────────────────────
+
+# Authoritative layer-status vocabulary. Every layer ends up in exactly one of
+# these — "passed" is never assumed, it is only ever set by the code path that
+# actually verified the layer did not need to act.
+_LAYER_STATUSES = frozenset({"passed", "blocked", "held", "skipped", "error", "not_reached"})
+
+LAYER_META: list[tuple[str, str, str | None]] = [
+    ("ingress",             "Ingress Sanitisation", "P1"),
+    ("pattern-detection",   "Pattern Detection",    "P3"),
+    ("semantic-classifier", "Semantic Classifier",  "P3"),
+    ("untrusted-tagging",   "Untrusted Tagging",    "P3"),
+    ("parser-llm",          "Parser LLM",           "P1"),
+    ("actor-llm",           "Actor + Capabilities", "P2·P4"),
+    ("egress-filter",       "Egress Filter",        "P10"),
+]
+_LAYER_ORDER = [m[0] for m in LAYER_META]
+_LAYER_NAME_BY_ID = {m[0]: m[1] for m in LAYER_META}
+_LAYER_PATTERN_BY_ID = {m[0]: m[2] for m in LAYER_META}
+
 
 def _ts() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -180,23 +235,25 @@ def _evt(severity: str, message: str, label: str | None = None) -> dict:
     return e
 
 
-def _sse_layer(
+def _layer_payload(
     layer_id: str,
-    name: str,
-    pattern: str | None,
     status: str,
-    duration_ms: float,
+    duration_ms: float | None,
     events: list[dict],
-) -> str:
-    data = {
+) -> dict:
+    assert status in _LAYER_STATUSES, f"invalid layer status: {status}"
+    return {
         "layerId":    layer_id,
-        "name":       name,
-        "pattern":    pattern,
+        "name":       _LAYER_NAME_BY_ID[layer_id],
+        "pattern":    _LAYER_PATTERN_BY_ID[layer_id],
         "status":     status,
-        "durationMs": round(duration_ms),
+        "durationMs": round(duration_ms) if duration_ms is not None else None,
         "events":     events,
     }
-    return f"event: layer_result\ndata: {json.dumps(data)}\n\n"
+
+
+def _sse_layer_event(payload: dict) -> str:
+    return f"event: layer_result\ndata: {json.dumps(payload)}\n\n"
 
 
 def _sse_verdict(
@@ -205,13 +262,17 @@ def _sse_verdict(
     blocked_by_pattern: str | None,
     blocked_by_layer: str | None,
     summary: str,
+    layers: list[dict],
+    policy_held: str | None = None,
 ) -> str:
     data = {
         "traceId":          trace_id,
         "outcome":          outcome,
         "blockedByPattern": blocked_by_pattern,
         "blockedByLayer":   blocked_by_layer,
+        "policyHeld":       policy_held,
         "summary":          summary,
+        "layers":           layers,
         "ts":               _ts(),
     }
     return f"event: verdict\ndata: {json.dumps(data)}\n\n"
@@ -222,6 +283,9 @@ def _sse_error(message: str) -> str:
 
 
 # ── Semantic classifier ───────────────────────────────────────────────────────
+
+_JSON_FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$", re.MULTILINE)
+
 
 async def _semantic_classify(text: str) -> tuple[str, float]:
     """Classify adversarial intent using Claude Haiku. Returns (intent, confidence)."""
@@ -240,14 +304,20 @@ async def _semantic_classify(text: str) -> tuple[str, float]:
         temperature=0,
         messages=[{"role": "user", "content": prompt}],
     )
-    data = json.loads(response.content[0].text.strip())
-    return str(data["intent"]), float(data["confidence"])
+    raw = _JSON_FENCE_RE.sub("", response.content[0].text.strip()).strip()
+    data = json.loads(raw)
+    intent = str(data["intent"]).strip().lower()
+    if intent not in ("adversarial", "benign"):
+        raise ValueError(f"classifier returned unrecognised intent: {intent!r}")
+    return intent, float(data["confidence"])
 
 
 # ── Egress helper (sync, for asyncio.to_thread) ───────────────────────────────
 
 def _run_egress_sync(output_text: str, trace_id: str) -> dict:
-    """Run egress filter; returns dict with events, status, blocked_by_layer, blocked_by_pattern."""
+    """Run egress filter; returns dict with events, status ('passed'|'blocked'|'error'),
+    blocked_by_layer, blocked_by_pattern. On 'error' the caller must fail closed — the
+    reply has not been cleared and must not be released to the user."""
     events: list[dict] = []
     status = "passed"
     blocked_by_layer: str | None = None
@@ -274,7 +344,7 @@ def _run_egress_sync(output_text: str, trace_id: str) -> dict:
             else:
                 events.append(_evt("ok", "Output cleared all 4 egress checks"))
     except RuntimeError:
-        # DB not configured — lightweight fallback
+        # DB not configured — lightweight fallback, still a real (if reduced) check.
         _, stripped_urls = strip_urls(output_text)
         pii_types = find_pii(output_text)
         if stripped_urls:
@@ -287,8 +357,11 @@ def _run_egress_sync(output_text: str, trace_id: str) -> dict:
         else:
             events.append(_evt("ok", "Output cleared egress checks (offline mode — DB unavailable)"))
     except Exception as exc:
+        # Fail closed: an egress check that couldn't run is not a pass. The caller
+        # withholds the reply rather than releasing unchecked output to the user.
         log.warning("egress_filter_failed trace=%s error=%s", trace_id[:8], exc)
-        events.append(_evt("neutral", f"Egress filter error — skipped ({type(exc).__name__})"))
+        events.append(_evt("alert", f"Egress filter error — output withheld ({type(exc).__name__})", "CONFIDENTIAL"))
+        status = "error"
 
     return {
         "events":           events,
@@ -296,6 +369,77 @@ def _run_egress_sync(output_text: str, trace_id: str) -> dict:
         "blocked_by_layer": blocked_by_layer,
         "blocked_by_pattern": blocked_by_pattern,
     }
+
+
+# ── Attack-log verdict update ─────────────────────────────────────────────────
+#
+# Strong references to in-flight background tasks — a bare asyncio.create_task
+# result can be garbage-collected mid-flight with nothing else referencing it.
+_bg_tasks: set[asyncio.Task] = set()
+
+
+def _schedule(coro) -> None:
+    task = asyncio.create_task(coro)
+    _bg_tasks.add(task)
+    task.add_done_callback(_bg_tasks.discard)
+
+
+async def _update_attack_log(
+    trace_id: str,
+    pipeline_verdict: str,
+    blocked_by_layer: str | None,
+    blocked_by_pattern: str | None,
+    is_breach: bool,
+) -> None:
+    """Async wrapper around the sync DB call, so tests can monkeypatch this
+    one seam with an AsyncMock the same way _audit_layer is mocked."""
+    await asyncio.to_thread(
+        _update_attack_log_sync,
+        trace_id, pipeline_verdict, blocked_by_layer, blocked_by_pattern, is_breach,
+    )
+
+
+def _update_attack_log_sync(
+    trace_id: str,
+    pipeline_verdict: str,
+    blocked_by_layer: str | None,
+    blocked_by_pattern: str | None,
+    is_breach: bool,
+) -> None:
+    """UPDATE the adversarial_attack_logs row this trace's INSERT already wrote
+    (playground.py submit() only inserts when attack_id is not None, and now
+    awaits that INSERT directly before responding, so by the time the SSE
+    pipeline can possibly run, the row already exists). Mirrors
+    adversarial_agent/strategy.py's _update_pipeline_verdict, but fired from
+    inside the web playground's own pipeline rather than the standalone agent."""
+    try:
+        dsn = get_dsn()
+    except RuntimeError:
+        return
+    try:
+        with psycopg.connect(dsn, autocommit=False) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE adversarial_attack_logs
+                       SET pipeline_verdict   = %s,
+                           blocked_by_layer   = %s,
+                           blocked_by_pattern = %s,
+                           is_breach          = %s
+                     WHERE trace_id = %s
+                    """,
+                    (pipeline_verdict, blocked_by_layer, blocked_by_pattern,
+                     is_breach, uuid.UUID(trace_id)),
+                )
+                if cur.rowcount == 0:
+                    log.warning(
+                        "attack_log_update_missed trace=%s — no matching row "
+                        "(INSERT may not have committed, or attack_id was None)",
+                        trace_id[:8],
+                    )
+            conn.commit()
+    except Exception as exc:
+        log.warning("attack_log_update_failed trace=%s error=%s", trace_id[:8], exc)
 
 
 # ── Audit helper ─────────────────────────────────────────────────────────────
@@ -348,6 +492,15 @@ async def _audit_layer(
 
 
 # ── Pipeline generator ────────────────────────────────────────────────────────
+#
+# Contract: this generator always ends by yielding exactly one `verdict` event
+# (or one `stream_error` if the trace can't be found at all). The verdict's
+# `layers` field is the single source of truth for per-layer status — it
+# always covers all 7 layers, using "not_reached" for anything after the
+# layer that decided the outcome, and "error" for a layer that raised instead
+# of reaching a real passed/blocked/held determination. The frontend must
+# render from `verdict.layers` on receipt, not from accumulated layer_result
+# events, since those are a live preview and this is the correction.
 
 async def _generate_pipeline(trace_id: str) -> AsyncGenerator[str, None]:
     entry = _get_trace(trace_id)
@@ -355,295 +508,375 @@ async def _generate_pipeline(trace_id: str) -> AsyncGenerator[str, None]:
         yield _sse_error("Trace not found or expired. Try resubmitting.")
         return
 
+    completed: dict[str, dict] = {}
+    current_layer_id: str = _LAYER_ORDER[0]
     blocked_by_layer: str | None = None
     blocked_by_pattern: str | None = None
-    # attack_signal tracks whether adversarial intent was detected at any layer;
-    # used for final BREACH vs CLEAN verdict when all layers pass.
-    attack_signal = bool(entry.detections)
+    policy_held_reason: str | None = None
 
-    # ── Layer 1: Ingress Sanitisation ─────────────────────────────────────────
-    # No I/O — data already in entry; yield immediately for low first-event latency.
-    t0 = time.monotonic()
-    ingress_events: list[dict] = []
-    ingress_status = "passed"
+    def _full_layers() -> list[dict]:
+        return [completed.get(lid) or _layer_payload(lid, "not_reached", None, []) for lid in _LAYER_ORDER]
 
-    if entry.chars_stripped > 0:
-        ingress_events.append(_evt("warn", f"Stripped {entry.chars_stripped} Unicode format characters"))
+    def _record(layer_id: str, status: str, duration_ms: float, events: list[dict]) -> dict:
+        payload = _layer_payload(layer_id, status, duration_ms, events)
+        completed[layer_id] = payload
+        return payload
 
-    if "delimiter_injection" in entry.detections:
-        ingress_events.append(_evt("alert", "Delimiter injection attempt — <untrusted> tags stripped", "DELIMITER"))
-        ingress_status = "blocked"
-        blocked_by_layer = "ingress"
-        blocked_by_pattern = "P1"
-    else:
-        ingress_events.append(_evt("ok", f"Input accepted — {len(entry.payload)} chars normalised"))
-
-    yield _sse_layer("ingress", "Ingress Sanitisation", "P1", ingress_status,
-                     (time.monotonic() - t0) * 1000, ingress_events)
-
-    if ingress_status == "blocked":
-        yield _sse_verdict(trace_id, "BLOCKED", blocked_by_pattern, blocked_by_layer,
-                           "Attack blocked at ingress: delimiter injection detected and stripped.")
-        return
-
-    # ── Layer 2: Pattern Detection ────────────────────────────────────────────
-    t0 = time.monotonic()
-    pattern_events: list[dict] = []
-    pattern_status = "passed"
-    semantic_detections = [d for d in entry.detections if d != "delimiter_injection"]
-
-    if semantic_detections:
-        for det in semantic_detections:
-            pattern_events.append(_evt("alert", f"Injection pattern matched: {det}", "INJECTION"))
-        pattern_status = "blocked"
-        blocked_by_layer = "pattern-detection"
-        blocked_by_pattern = "P3"
-    else:
-        pattern_events.append(_evt("ok", "No injection patterns detected in input"))
-
-    yield _sse_layer("pattern-detection", "Pattern Detection", "P3", pattern_status,
-                     (time.monotonic() - t0) * 1000, pattern_events)
-
-    if pattern_status == "blocked":
-        asyncio.create_task(_audit_layer(
-            trace_id, "pattern_detection", "injection_pattern_blocked",
-            {"patterns": semantic_detections}, security_event=True,
-        ))
-        yield _sse_verdict(trace_id, "BLOCKED", blocked_by_pattern, blocked_by_layer,
-                           f"Attack blocked at pattern detection: {', '.join(semantic_detections)}.")
-        return
-
-    # ── Layer 3: Semantic Classifier ──────────────────────────────────────────
-    t0 = time.monotonic()
-    sem_events: list[dict] = []
-    sem_status = "passed"
-    sem_confidence: float = 0.0
+    def _finish(outcome: str, summary: str) -> str:
+        # Fire-and-forget UPDATE of the adversarial_attack_logs row for this
+        # trace, scheduled here — synchronously, before the verdict string is
+        # returned (and thus before the `yield` that hands it to the client) —
+        # rather than after the yield. If the client disconnects as soon as it
+        # sees the verdict event, Starlette may never resume this generator
+        # past that yield, so anything scheduled after it could simply never
+        # run. Scheduling inside _finish() means every call site (there are
+        # several) and the outer unhandled-exception handler all go through
+        # this one choke point.
+        if entry.attack_id is not None:
+            db_blocked_by_layer = blocked_by_layer
+            if outcome == "HELD" and db_blocked_by_layer is None:
+                # The actor itself declined on policy grounds — that *is* the
+                # blocking layer for DB/audit purposes, even though the SSE
+                # verdict payload's blockedByLayer stays None for HELD (HELD
+                # is not a "blocked" outcome from the pipeline's own
+                # perspective; this is purely for the adversary page's
+                # "blocked at <layer>" display, which otherwise falls back to
+                # a misleading "blocked at ingress").
+                db_blocked_by_layer = "actor-llm"
+            # Breach = an attack-tagged submission that evaded every layer.
+            # The pipeline has no ground truth about intent beyond what it
+            # detects — only the web playground's submit() endpoint knows a
+            # request was a deliberate attack (attack_id is not None), so that
+            # context is what makes CLEAN here legitimately mean "breach",
+            # not any new heuristic.
+            is_breach = outcome == "CLEAN"
+            _schedule(_update_attack_log(
+                trace_id, outcome, db_blocked_by_layer, blocked_by_pattern, is_breach,
+            ))
+        return _sse_verdict(trace_id, outcome, blocked_by_pattern, blocked_by_layer,
+                             summary, _full_layers(), policy_held=policy_held_reason)
 
     try:
-        intent, sem_confidence = await _semantic_classify(entry.payload)
-        sem_events.append(_evt("audit", f"Intent: {intent} (confidence: {sem_confidence:.2f})"))
+        # ── Layer 1: Ingress Sanitisation ─────────────────────────────────────
+        current_layer_id = "ingress"
+        t0 = time.monotonic()
+        ingress_events: list[dict] = []
+        ingress_status = "passed"
 
-        if intent == "adversarial" and sem_confidence >= _ADVERSARIAL_THRESHOLD:
-            sem_events.append(_evt("alert", f"High-confidence adversarial intent ({sem_confidence:.0%}) — blocked"))
-            sem_status = "blocked"
-            blocked_by_layer = "semantic-classifier"
-            blocked_by_pattern = "P3"
-            attack_signal = True
+        if entry.chars_stripped > 0:
+            ingress_events.append(_evt("warn", f"Stripped {entry.chars_stripped} Unicode format characters"))
+
+        if "delimiter_injection" in entry.detections:
+            ingress_events.append(_evt("alert", "Delimiter injection attempt — <untrusted> tags stripped", "DELIMITER"))
+            ingress_status = "blocked"
         else:
-            sem_events.append(_evt("ok", f"Classifier cleared input ({intent}, {sem_confidence:.0%} confidence)"))
-    except Exception as exc:
-        log.warning("semantic_classify_failed trace=%s error=%s", trace_id[:8], exc)
-        sem_events.append(_evt("neutral", "Semantic classifier unavailable — check skipped"))
+            ingress_events.append(_evt("ok", f"Input accepted — {len(entry.payload)} chars normalised"))
 
-    yield _sse_layer("semantic-classifier", "Semantic Classifier", "P3", sem_status,
-                     (time.monotonic() - t0) * 1000, sem_events)
+        payload = _record("ingress", ingress_status, (time.monotonic() - t0) * 1000, ingress_events)
+        yield _sse_layer_event(payload)
 
-    if sem_status == "blocked":
-        asyncio.create_task(_audit_layer(
-            trace_id, "semantic_classifier", "adversarial_intent_blocked",
-            {"intent": intent, "confidence": round(sem_confidence, 2)}, security_event=True,
-        ))
-        yield _sse_verdict(trace_id, "BLOCKED", blocked_by_pattern, blocked_by_layer,
-                           f"Attack blocked by semantic classifier: adversarial intent at {sem_confidence:.0%} confidence.")
-        return
+        if ingress_status == "blocked":
+            blocked_by_layer, blocked_by_pattern = "ingress", "P1"
+            yield _finish("BLOCKED", "Attack blocked at ingress: delimiter injection detected and stripped.")
+            return
 
-    # ── Layer 4: Untrusted Tagging ────────────────────────────────────────────
-    t0 = time.monotonic()
-    preview = entry.sanitized[:120] + ("…" if len(entry.sanitized) > 120 else "")
-    tag_events: list[dict] = [
-        _evt("trust", "Input wrapped in <untrusted> delimiter", "PUBLIC+UNTRUSTED"),
-        _evt("audit", f"Tagged: {preview}"),
-    ]
-    yield _sse_layer("untrusted-tagging", "Untrusted Tagging", "P3", "passed",
-                     (time.monotonic() - t0) * 1000, tag_events)
+        # ── Layer 2: Pattern Detection ───────────────────────────────────────
+        current_layer_id = "pattern-detection"
+        t0 = time.monotonic()
+        pattern_events: list[dict] = []
+        pattern_status = "passed"
+        semantic_detections = [d for d in entry.detections if d != "delimiter_injection"]
 
-    # ── Layer 5: Parser LLM ───────────────────────────────────────────────────
-    t0 = time.monotonic()
-    parser_events: list[dict] = []
-    parser_status = "passed"
-    intake_output: IntakeOutput | None = None
+        if semantic_detections:
+            for det in semantic_detections:
+                pattern_events.append(_evt("alert", f"Injection pattern matched: {det}", "INJECTION"))
+            pattern_status = "blocked"
+        else:
+            pattern_events.append(_evt("ok", "No injection patterns detected in input"))
 
-    try:
-        def _run_parser() -> IntakeOutput:
-            # entry.sanitized is already "<untrusted>…</untrusted>";
-            # run_intake_parser wraps its input again, so unwrap first.
-            raw = entry.sanitized.removeprefix("<untrusted>").removesuffix("</untrusted>")
-            return run_intake_parser(raw, client=get_sync_client(), session_id=trace_id)
+        payload = _record("pattern-detection", pattern_status, (time.monotonic() - t0) * 1000, pattern_events)
+        yield _sse_layer_event(payload)
 
-        intake_output = await asyncio.to_thread(_run_parser)
-        parser_events.append(_evt("ok",
-            f"Schema validated — intent={intake_output.intent.value}, "
-            f"incident_type={intake_output.incident_type.value}"))
-        parser_events.append(_evt("audit", "tools=[] quarantine boundary enforced", "UNTRUSTED"))
-    except SchemaViolationError as exc:
-        attack_signal = True
-        parser_events.append(_evt("alert",
-            f"Schema violation: {exc.error_kind} at {exc.field_path or 'root'}", "UNTRUSTED"))
-        parser_status = "blocked"
-        blocked_by_layer = "parser-llm"
-        blocked_by_pattern = "P1"
-    except Exception as exc:
-        parser_events.append(_evt("warn", f"Parser error: {type(exc).__name__}: {exc}"))
-        parser_status = "blocked"
-        blocked_by_layer = "parser-llm"
-        blocked_by_pattern = "P1"
+        if pattern_status == "blocked":
+            blocked_by_layer, blocked_by_pattern = "pattern-detection", "P3"
+            asyncio.create_task(_audit_layer(
+                trace_id, "pattern_detection", "injection_pattern_blocked",
+                {"patterns": semantic_detections}, security_event=True,
+            ))
+            yield _finish("BLOCKED", f"Attack blocked at pattern detection: {', '.join(semantic_detections)}.")
+            return
 
-    yield _sse_layer("parser-llm", "Parser LLM", "P1", parser_status,
-                     (time.monotonic() - t0) * 1000, parser_events)
+        # ── Layer 3: Semantic Classifier ─────────────────────────────────────
+        current_layer_id = "semantic-classifier"
+        t0 = time.monotonic()
+        sem_events: list[dict] = []
+        sem_status = "passed"
+        sem_confidence: float = 0.0
+        intent = "unknown"
 
-    if parser_status == "blocked":
-        asyncio.create_task(_audit_layer(
-            trace_id, "parser_llm", "schema_violation_blocked",
-            {"reason": parser_events[-1]["message"] if parser_events else "schema_violation"},
-            security_event=True,
-        ))
-        yield _sse_verdict(trace_id, "BLOCKED", blocked_by_pattern, blocked_by_layer,
-                           "Attack caused parser schema violation — quarantine boundary held.")
-        return
-
-    # ── Layer 6: Actor LLM ────────────────────────────────────────────────────
-    t0 = time.monotonic()
-    actor_events: list[dict] = []
-    actor_status = "passed"
-    actor_reply: str = ""
-
-    persona_key = entry.persona_key or "mark"
-    chat_session_id = entry.chat_session_id or ""
-    has_attachment = entry.has_attachment
-
-    tokens: dict[str, CapabilityToken] = {
-        tool: issue_token(_ORCHESTRATOR_KM, agent_id="intake_actor", tool=tool, scope={})
-        for tool in ("mark_intake_complete", "request_more_info", "search_public_faq")
-    }
-    actor_events.append(_evt("trust", "3 capability tokens issued (P4 gate active)", "P4"))
-
-    # Persist token issuances to capability_token_log so the defender's view shows them.
-    def _persist_tokens(_tokens: dict[str, CapabilityToken]) -> None:
         try:
-            with psycopg.connect(get_dsn(), autocommit=False) as conn:
-                for token in _tokens.values():
-                    persist_issuance(conn, token)
-                conn.commit()
+            intent, sem_confidence = await _semantic_classify(entry.payload)
+            sem_events.append(_evt("audit", f"Intent: {intent} (confidence: {sem_confidence:.2f})"))
+
+            if intent == "adversarial" and sem_confidence >= _ADVERSARIAL_THRESHOLD:
+                sem_events.append(_evt("alert", f"High-confidence adversarial intent ({sem_confidence:.0%}) — blocked"))
+                sem_status = "blocked"
+            else:
+                sem_events.append(_evt("ok", f"Classifier cleared input ({intent}, {sem_confidence:.0%} confidence)"))
         except Exception as exc:
-            log.warning("capability_token_persist_failed trace=%s error=%s", trace_id[:8], exc)
+            # Soft/heuristic layer — a classifier failure does not halt the
+            # pipeline (pattern-detection already covers the hard cases), but
+            # it must never be reported as a verified "passed".
+            log.warning("semantic_classify_failed trace=%s error=%s", trace_id[:8], exc)
+            sem_events.append(_evt("neutral", f"Semantic classifier unavailable — check skipped ({type(exc).__name__})"))
+            sem_status = "error"
 
-    asyncio.create_task(asyncio.to_thread(_persist_tokens, tokens))
+        payload = _record("semantic-classifier", sem_status, (time.monotonic() - t0) * 1000, sem_events)
+        yield _sse_layer_event(payload)
 
-    def _fetch_persona_data() -> dict:
-        from app.showcase.playground import PERSONA_CUSTOMER_IDS
-        from psycopg.rows import dict_row as _dict_row
-        customer_id = PERSONA_CUSTOMER_IDS.get(persona_key, PERSONA_CUSTOMER_IDS["mark"])
+        if sem_status == "blocked":
+            blocked_by_layer, blocked_by_pattern = "semantic-classifier", "P3"
+            asyncio.create_task(_audit_layer(
+                trace_id, "semantic_classifier", "adversarial_intent_blocked",
+                {"intent": intent, "confidence": round(sem_confidence, 2)}, security_event=True,
+            ))
+            yield _finish("BLOCKED", f"Attack blocked by semantic classifier: adversarial intent at {sem_confidence:.0%} confidence.")
+            return
+
+        # ── Layer 4: Untrusted Tagging ────────────────────────────────────────
+        current_layer_id = "untrusted-tagging"
+        t0 = time.monotonic()
+        preview = entry.sanitized[:120] + ("…" if len(entry.sanitized) > 120 else "")
+        tag_events: list[dict] = [
+            _evt("trust", "Input wrapped in <untrusted> delimiter", "PUBLIC+UNTRUSTED"),
+            _evt("audit", f"Tagged: {preview}"),
+        ]
+        payload = _record("untrusted-tagging", "passed", (time.monotonic() - t0) * 1000, tag_events)
+        yield _sse_layer_event(payload)
+
+        # ── Layer 5: Parser LLM ──────────────────────────────────────────────
+        current_layer_id = "parser-llm"
+        t0 = time.monotonic()
+        parser_events: list[dict] = []
+        parser_status = "passed"
+
         try:
-            with psycopg.connect(get_dsn(), autocommit=False) as conn:
-                with conn.cursor(row_factory=_dict_row) as cur:
-                    cur.execute(
-                        """
-                        SELECT
-                            c.first_name, c.last_name, c.city, c.state,
-                            p.policy_number, p.policy_type, p.policy_csl, p.policy_deductible,
-                            p.coverage_type, p.policy_expiry_date, p.policy_status,
-                            v.auto_make, v.auto_model, v.auto_year,
-                            cl.claim_number, cl.incident_type, cl.claim_stage, cl.total_claim_amount
-                        FROM customers c
-                        JOIN policies p ON p.customer_id = c.customer_id
-                        JOIN vehicles v ON v.customer_id = c.customer_id
-                        LEFT JOIN claims cl ON cl.customer_id = c.customer_id
-                        WHERE c.customer_id = %s
-                        LIMIT 1
-                        """,
-                        (customer_id,),
-                    )
-                    row = cur.fetchone()
-            return dict(row) if row else {}
+            def _run_parser() -> IntakeOutput:
+                # entry.sanitized is already "<untrusted>…</untrusted>";
+                # run_intake_parser wraps its input again, so unwrap first.
+                raw = entry.sanitized.removeprefix("<untrusted>").removesuffix("</untrusted>")
+                return run_intake_parser(raw, client=get_sync_client(), session_id=trace_id)
+
+            intake_output = await asyncio.to_thread(_run_parser)
+            parser_events.append(_evt("ok",
+                f"Schema validated — intent={intake_output.intent.value}, "
+                f"incident_type={intake_output.incident_type.value}"))
+            parser_events.append(_evt("audit", "tools=[] quarantine boundary enforced", "UNTRUSTED"))
+        except SchemaViolationError as exc:
+            parser_events.append(_evt("alert",
+                f"Schema violation: {exc.error_kind} at {exc.field_path or 'root'}", "UNTRUSTED"))
+            parser_status = "blocked"
         except Exception as exc:
-            log.warning("persona_fetch_failed trace=%s error=%s", trace_id[:8], exc)
-            return {}
+            # Not an attack signal — a system/transport failure. Still halts the
+            # pipeline (fail closed: the quarantine boundary didn't run), but is
+            # reported honestly as an error rather than a detected attack.
+            log.warning("parser_llm_failed trace=%s error=%s", trace_id[:8], exc)
+            parser_events.append(_evt("warn", f"Parser error: {type(exc).__name__}: {exc}"))
+            parser_status = "error"
 
-    persona_data = await asyncio.to_thread(_fetch_persona_data)
-    knowledge_blob = await _load_policy_knowledge()
-    system_prompt = _build_playground_system_prompt(persona_data, has_attachment, knowledge_blob)
+        payload = _record("parser-llm", parser_status, (time.monotonic() - t0) * 1000, parser_events)
+        yield _sse_layer_event(payload)
 
-    from app.showcase import session_store
-    history = session_store.get_history(chat_session_id)
-    messages = history + [{"role": "user", "content": entry.payload}]
+        if parser_status == "blocked":
+            blocked_by_layer, blocked_by_pattern = "parser-llm", "P1"
+            asyncio.create_task(_audit_layer(
+                trace_id, "parser_llm", "schema_violation_blocked",
+                {"reason": parser_events[-1]["message"] if parser_events else "schema_violation"},
+                security_event=True,
+            ))
+            yield _finish("BLOCKED", "Attack caused parser schema violation — quarantine boundary held.")
+            return
+        if parser_status == "error":
+            blocked_by_layer = "parser-llm"
+            yield _finish("ERROR", "The request could not be safely processed (parser error). Please try again.")
+            return
 
-    try:
-        response = await get_async_client().messages.create(
-            model="claude-haiku-4-5-20251001",
-            system=system_prompt,
-            messages=messages,
-            max_tokens=512,
-            temperature=0,
-        )
-        actor_reply = response.content[0].text.strip()
-        actor_events.append(_evt("ok", "Insurance assistant response generated"))
+        # ── Layer 6: Actor LLM ────────────────────────────────────────────────
+        current_layer_id = "actor-llm"
+        t0 = time.monotonic()
+        actor_events: list[dict] = []
+        actor_status = "passed"
+        actor_reply: str = ""
+
+        persona_key = entry.persona_key or "mark"
+        chat_session_id = entry.chat_session_id or ""
+        has_attachment = entry.has_attachment
+
+        tokens: dict[str, CapabilityToken] = {
+            tool: issue_token(_ORCHESTRATOR_KM, agent_id="intake_actor", tool=tool, scope={})
+            for tool in ("mark_intake_complete", "request_more_info", "search_public_faq")
+        }
+        actor_events.append(_evt("trust", "3 capability tokens issued (P4 gate active)", "P4"))
+
+        # Persist token issuances to capability_token_log so the defender's view shows them.
+        def _persist_tokens(_tokens: dict[str, CapabilityToken]) -> None:
+            try:
+                with psycopg.connect(get_dsn(), autocommit=False) as conn:
+                    for token in _tokens.values():
+                        persist_issuance(conn, token)
+                    conn.commit()
+            except Exception as exc:
+                log.warning("capability_token_persist_failed trace=%s error=%s", trace_id[:8], exc)
+
+        asyncio.create_task(asyncio.to_thread(_persist_tokens, tokens))
+
+        def _fetch_persona_data() -> dict:
+            from app.showcase.playground import PERSONA_CUSTOMER_IDS
+            from psycopg.rows import dict_row as _dict_row
+            customer_id = PERSONA_CUSTOMER_IDS.get(persona_key, PERSONA_CUSTOMER_IDS["mark"])
+            try:
+                with psycopg.connect(get_dsn(), autocommit=False) as conn:
+                    with conn.cursor(row_factory=_dict_row) as cur:
+                        cur.execute(
+                            """
+                            SELECT
+                                c.first_name, c.last_name, c.city, c.state,
+                                p.policy_number, p.policy_type, p.policy_csl, p.policy_deductible,
+                                p.coverage_type, p.policy_expiry_date, p.policy_status,
+                                v.auto_make, v.auto_model, v.auto_year,
+                                cl.claim_number, cl.incident_type, cl.claim_stage, cl.total_claim_amount
+                            FROM customers c
+                            JOIN policies p ON p.customer_id = c.customer_id
+                            JOIN vehicles v ON v.customer_id = c.customer_id
+                            LEFT JOIN claims cl ON cl.customer_id = c.customer_id
+                            WHERE c.customer_id = %s
+                            LIMIT 1
+                            """,
+                            (customer_id,),
+                        )
+                        row = cur.fetchone()
+                return dict(row) if row else {}
+            except Exception as exc:
+                log.warning("persona_fetch_failed trace=%s error=%s", trace_id[:8], exc)
+                return {}
+
+        persona_data = await asyncio.to_thread(_fetch_persona_data)
+        knowledge_blob = await _load_policy_knowledge()
+        system_prompt = _build_playground_system_prompt(persona_data, has_attachment, knowledge_blob)
+
+        from app.showcase import session_store
+        history = session_store.get_history(chat_session_id)
+        messages = history + [{"role": "user", "content": entry.payload}]
+
+        try:
+            response = await get_async_client().messages.create(
+                model="claude-haiku-4-5-20251001",
+                system=system_prompt,
+                messages=messages,
+                max_tokens=512,
+                temperature=0,
+            )
+            actor_reply = response.content[0].text.strip()
+            actor_events.append(_evt("ok", "Insurance assistant response generated"))
+        except Exception as exc:
+            log.warning("actor_llm_failed trace=%s error=%s", trace_id[:8], exc)
+            actor_events.append(_evt("alert", f"Actor LLM error — no reply generated ({type(exc).__name__})"))
+            actor_status = "error"
+
+        if actor_status == "error":
+            payload = _record("actor-llm", "error", (time.monotonic() - t0) * 1000, actor_events)
+            yield _sse_layer_event(payload)
+            blocked_by_layer = "actor-llm"
+            yield _finish("ERROR", "I'm having trouble processing that right now. Please try again.")
+            return
+
+        policy_held_match = _POLICY_HELD_RE.search(actor_reply)
+        if policy_held_match:
+            slug = policy_held_match.group(1).strip().lower()
+            policy_held_reason = slug if slug in _POLICY_HELD_REASONS else "out_of_scope_request"
+            actor_reply = _POLICY_HELD_STRIP_RE.sub("", actor_reply).strip()
+            actor_status = "held"
+            actor_events.append(_evt("trust", f"Request declined per policy boundary: {policy_held_reason}", "P2"))
+
+        if _CLAIM_READY_RE.search(actor_reply):
+            claim_ref = f"CLM-{uuid.uuid4().hex[:6].upper()}"
+            actor_reply = _CLAIM_READY_RE.sub("", actor_reply).strip()
+            actor_reply += f"\n\nYour claim **{claim_ref}** has been submitted. Our team will review the details and get back to you within 3–5 business days."
+            actor_events.append(_evt("ok", f"Claim submitted: {claim_ref}", "P4"))
+            asyncio.create_task(_audit_layer(
+                trace_id, "actor_llm", "claim_submitted",
+                {"claim_ref": claim_ref, "persona_key": persona_key},
+                security_event=False,
+            ))
+        else:
+            asyncio.create_task(_audit_layer(
+                trace_id, "actor_llm", "actor_response",
+                {"intent": "conversation"},
+                security_event=False,
+            ))
+
+        payload = _record("actor-llm", actor_status, (time.monotonic() - t0) * 1000, actor_events)
+        yield _sse_layer_event(payload)
+
+        # History must only ever contain what the user actually received. The
+        # actor's own reply text is NOT appended here — only once we know it
+        # will reach the user unmodified (held, or cleared by egress below) —
+        # so a reply that egress later blocks or errors on never leaks into
+        # the conversation the model sees on the next turn.
+        if chat_session_id:
+            session_store.append(chat_session_id, "user", entry.payload)
+
+        if actor_status == "held":
+            # The actor itself declined on policy grounds — nothing further to
+            # check downstream. Egress is not run; it is reported "not_reached".
+            if chat_session_id:
+                session_store.append(chat_session_id, "assistant", actor_reply)
+            yield _finish("HELD", actor_reply)
+            return
+
+        # ── Layer 7: Egress Filter ───────────────────────────────────────────
+        current_layer_id = "egress-filter"
+        t0 = time.monotonic()
+        egress_result = await asyncio.to_thread(_run_egress_sync, actor_reply, trace_id)
+        egress_status = egress_result["status"]
+        if egress_result["blocked_by_layer"]:
+            blocked_by_layer = egress_result["blocked_by_layer"]
+            blocked_by_pattern = egress_result["blocked_by_pattern"]
+
+        payload = _record("egress-filter", egress_status, (time.monotonic() - t0) * 1000, egress_result["events"])
+        yield _sse_layer_event(payload)
+
+        if egress_status == "blocked":
+            asyncio.create_task(_audit_layer(
+                trace_id, "egress_filter", "egress_violation_blocked",
+                {"violations": [e["message"] for e in egress_result["events"] if e.get("severity") == "alert"]},
+                security_event=True,
+            ))
+            yield _finish("BLOCKED", "Output blocked at egress filter: violation detected in actor response.")
+            return
+        if egress_status == "error":
+            # Fail closed: the check that must clear the reply for release
+            # could not run, so the reply is withheld rather than released.
+            blocked_by_layer = "egress-filter"
+            yield _finish("ERROR", "The response could not be safety-checked before release. Please try again.")
+            return
+
+        if chat_session_id:
+            session_store.append(chat_session_id, "assistant", actor_reply)
+        yield _finish("CLEAN", actor_reply)
+
     except Exception as exc:
-        log.warning("actor_llm_failed trace=%s error=%s", trace_id[:8], exc)
-        actor_reply = "I'm having trouble processing that right now. Please try again."
-        actor_status = "partial"
-
-    if _CLAIM_READY_RE.search(actor_reply):
-        claim_ref = f"CLM-{uuid.uuid4().hex[:6].upper()}"
-        actor_reply = _CLAIM_READY_RE.sub("", actor_reply).strip()
-        actor_reply += f"\n\nYour claim **{claim_ref}** has been submitted. Our team will review the details and get back to you within 3–5 business days."
-        actor_events.append(_evt("ok", f"Claim submitted: {claim_ref}", "P4"))
+        log.error("pipeline_unhandled_error trace=%s layer=%s error=%s", trace_id[:8], current_layer_id, exc, exc_info=True)
+        blocked_by_layer = current_layer_id
+        if current_layer_id not in completed:
+            completed[current_layer_id] = _layer_payload(current_layer_id, "error", None, [
+                _evt("alert", f"Unhandled error — {type(exc).__name__}"),
+            ])
         asyncio.create_task(_audit_layer(
-            trace_id, "actor_llm", "claim_submitted",
-            {"claim_ref": claim_ref, "persona_key": persona_key},
-            security_event=False,
+            trace_id, "orchestrator", "pipeline_unhandled_error",
+            {"layer": current_layer_id, "error": type(exc).__name__}, security_event=True,
         ))
-    else:
-        asyncio.create_task(_audit_layer(
-            trace_id, "actor_llm", "actor_response",
-            {"intent": "conversation"},
-            security_event=False,
-        ))
-
-    yield _sse_layer("actor-llm", "Actor + Capabilities", "P2·P4", actor_status,
-                     (time.monotonic() - t0) * 1000, actor_events)
-
-    # ── Layer 7: Egress Filter ────────────────────────────────────────────────
-    t0 = time.monotonic()
-
-    output_text = actor_reply
-
-    egress_result = await asyncio.to_thread(_run_egress_sync, output_text, trace_id)
-    egress_status = egress_result["status"]
-    if egress_result["blocked_by_layer"]:
-        blocked_by_layer = egress_result["blocked_by_layer"]
-        blocked_by_pattern = egress_result["blocked_by_pattern"]
-
-    yield _sse_layer("egress-filter", "Egress Filter", "P10", egress_status,
-                     (time.monotonic() - t0) * 1000, egress_result["events"])
-
-    # ── Final Verdict ─────────────────────────────────────────────────────────
-    if egress_status == "blocked":
-        asyncio.create_task(_audit_layer(
-            trace_id, "egress_filter", "egress_violation_blocked",
-            {"violations": [e["message"] for e in egress_result["events"] if e.get("severity") == "alert"]},
-            security_event=True,
-        ))
-        final_outcome = "BLOCKED"
-        final_summary = "Output blocked at egress filter: violation detected in actor response."
-    elif actor_status == "partial":
-        final_outcome = "PARTIAL"
-        final_summary = actor_reply
-    elif attack_signal:
-        asyncio.create_task(_audit_layer(
-            trace_id, "orchestrator", "pipeline_breach",
-            {"layers_passed": 7, "attack_signal": True}, security_event=True,
-        ))
-        final_outcome = "BREACH"
-        final_summary = "I can't process that request — it triggered a security alert."
-    else:
-        final_outcome = "CLEAN"
-        final_summary = actor_reply
-
-    if chat_session_id:
-        session_store.append(chat_session_id, "user", entry.payload)
-        session_store.append(chat_session_id, "assistant", final_summary)
-
-    yield _sse_verdict(trace_id, final_outcome, blocked_by_pattern, blocked_by_layer, final_summary)
+        yield _finish("ERROR", "An internal error occurred — the request could not be completed safely.")
 
 
 # ── Route ─────────────────────────────────────────────────────────────────────

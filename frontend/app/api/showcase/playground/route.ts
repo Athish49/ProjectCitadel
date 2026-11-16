@@ -46,8 +46,13 @@ export async function POST(request: NextRequest) {
   }
 
   const validTab = (tab in TAB_ATTACK ? tab : "chat") as AttackComposerTab;
-  const attack = (attackId && attackName)
-    ? { id: attackId, name: attackName }
+  // `attack` is only UI metadata (label for the composer's "Try a prompt" tiles).
+  // The backend attack_id must stay null for free-form chat — it's an attack-log
+  // foreign key, and tagging every benign message with a guessed template id
+  // would misclassify it in adversarial_attack_logs.
+  const isTemplateAttack = Boolean(attackId && attackName);
+  const attack = isTemplateAttack
+    ? { id: attackId as number, name: attackName as string }
     : TAB_ATTACK[validTab];
 
   try {
@@ -59,7 +64,7 @@ export async function POST(request: NextRequest) {
       },
       body: JSON.stringify({
         message: payload,
-        attack_id: attack.id,
+        attack_id: isTemplateAttack ? attack.id : null,
         chat_session_id,
         persona_key,
         has_attachment,

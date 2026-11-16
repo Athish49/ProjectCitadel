@@ -1,4 +1,4 @@
-# SecureClaim AI — Implementation Roadmap
+# Project Citadel — Implementation Roadmap
 
 **Version:** 2.1
 **Date:** July 12, 2026

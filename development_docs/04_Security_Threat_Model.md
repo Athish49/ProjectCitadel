@@ -1,4 +1,4 @@
-# SecureClaim AI — Security & Threat Model Document
+# Project Citadel — Security & Threat Model Document
 
 **Version:** 2.0
 **Date:** June 1, 2026
@@ -10,7 +10,7 @@
 
 ## 1. Threat Landscape Overview
 
-This document maps each of the 79 attack categories in `agentic_ai_attack_types.md` to the SecureClaim AI architecture. For each attack we declare:
+This document maps each of the 79 attack categories in `agentic_ai_attack_types.md` to the Project Citadel architecture. For each attack we declare:
 
 - **Class:** `LIVE` (we run automated attack variants and report numbers), `ARCHITECTURAL` (the architecture makes the attack inapplicable or prevented by construction; we don't need a runtime test, we cite the pattern), or `OUT-OF-SCOPE` (e.g. training-data attacks when we don't train a model — documented explicitly with rationale).
 - **Patterns engaged:** which of the named patterns from Doc 02 §1.2 defend it.

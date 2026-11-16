@@ -621,7 +621,7 @@ def edge_large_clean() -> bytes:
 def clean_simple() -> bytes:
     cs = _text_stream(
         "BT /F1 12 Tf 0 0 0 rg 72 720 Td",
-        "(SecureClaim Insurance - Claim Form) Tj",
+        "(Project Citadel Insurance - Claim Form) Tj",
         "0 -20 Td (Policy Number: POL-00112233) Tj",
         "0 -20 Td (Claimant: Alice Johnson) Tj",
         "0 -20 Td (Date of Loss: 2024-03-01) Tj",

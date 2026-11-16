@@ -1,171 +1,156 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useEffect, useRef } from "react";
-import { HERO_STATS, HERO_INITIAL_VALUES } from "@/lib/data/home";
+import { useEffect, useRef, useState } from "react";
+import { useAdversarialStream } from "@/lib/hooks/use-adversarial-stream";
+import { PATTERNS } from "@/lib/data/patterns";
+
+const fmt = (n: number) => Math.round(n).toLocaleString("en-US");
+const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+
+// All 12 patterns in lib/data/patterns.ts are implemented — this is a
+// static, always-true fact about the codebase, not a live metric.
+const PATTERNS_ARMED = PATTERNS.length;
+const PATTERNS_TOTAL = PATTERNS.length;
 
 export function HeroSection() {
-  const [attacksToday, setAttacksToday] = useState(1214);
-  const [blockedToday, setBlockedToday] = useState(1214);
-  const [healthTick, setHealthTick] = useState("0s ago");
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const { totalAttempts, breachCount, connected, backendDown } = useAdversarialStream();
+
+  // One-time count-up, eased over 1400ms — ported from Main.dc.html's
+  // componentDidMount `up` interval, but now animates from 0 to the REAL
+  // numbers once the SSE connection delivers its first real stats, instead
+  // of to a hardcoded constant on mount.
+  const [k, setK] = useState(0);
+  const animStarted = useRef(false);
 
   useEffect(() => {
-    const schedule = () => {
-      timerRef.current = setInterval(() => {
-        setAttacksToday((n) => n + 1);
-        setBlockedToday((n) => n + 1);
-      }, 2600 + Math.random() * 1200);
-    };
-    schedule();
-    tickRef.current = setInterval(() => {
-      setHealthTick(`${Math.floor(Math.random() * 4) + 1}s ago`);
-    }, 5000);
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-      if (tickRef.current) clearInterval(tickRef.current);
-    };
-  }, []);
+    if (animStarted.current || !connected) return;
+    animStarted.current = true;
+    const t0 = Date.now();
+    const id = setInterval(() => {
+      const t = Math.min(1, (Date.now() - t0) / 1400);
+      setK(easeOutCubic(t));
+      if (t >= 1) clearInterval(id);
+    }, 40);
+    return () => clearInterval(id);
+  }, [connected]);
 
-  const liveValues = [
-    attacksToday.toLocaleString("en-US"),
-    blockedToday.toLocaleString("en-US"),
-    HERO_INITIAL_VALUES[2],
-    HERO_INITIAL_VALUES[3],
+  const hasData = connected && !backendDown;
+  const blocked = Math.max(0, totalAttempts - breachCount);
+
+  const stats = [
+    {
+      label: "Attacks captured · all-time",
+      value: hasData ? fmt(totalAttempts * k) : "—",
+      sub: "Live users and the adversarial agent",
+      color: "rgba(255,255,255,0.95)",
+    },
+    {
+      // Detected and stopped as an attack — red.
+      label: "Blocked · all-time",
+      value: hasData ? fmt(blocked * k) : "—",
+      sub: "Most often at the parser",
+      color: "var(--alert)",
+    },
+    {
+      // Evaded every layer, i.e. not flagged as an attack — green.
+      label: "Breaches · all-time",
+      value: hasData ? fmt(breachCount * k) : "—",
+      sub: "Each patched and published",
+      color: "var(--ok)",
+    },
+    {
+      label: "Patterns armed",
+      value: `${fmt(PATTERNS_ARMED * k)}/${PATTERNS_TOTAL}`,
+      sub: "Dual-LLM to signed prompts",
+      color: "var(--ok)",
+    },
   ];
 
   return (
-    <section
-      id="top"
-      style={{ padding: "172px 32px 0", maxWidth: "1240px", margin: "0 auto" }}
-    >
-      {/* breadcrumb */}
-      <div
-        style={{
-          display: "flex", alignItems: "center", gap: "10px",
-          fontFamily: "var(--font-geist-mono), monospace",
-          fontSize: "12px", letterSpacing: "0.08em",
-          color: "rgba(255,255,255,0.45)", textTransform: "uppercase",
-        }}
-      >
-        <span>Project Citadel</span>
-        <span style={{ color: "rgba(255,255,255,0.2)" }}>/</span>
-        <span>A multi-agent system engineered to be attacked</span>
+    <section style={{ maxWidth: "1264px", margin: "0 auto", padding: "clamp(72px,11vw,150px) 32px 0" }}>
+      <div data-rv style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+        <span className="live-dot" />
+        <span className="eb">System live · 12 of 12 defenses armed</span>
       </div>
 
-      {/* h1 */}
       <h1
+        data-rv
         style={{
-          margin: "28px 0 0",
-          fontSize: "clamp(42px, 4.6vw, 68px)",
-          lineHeight: 1.08,
-          letterSpacing: "-0.032em",
+          margin: "26px 0 0",
+          fontSize: "clamp(46px,8.2vw,112px)",
+          lineHeight: 0.98,
+          letterSpacing: "-0.045em",
           fontWeight: 600,
-          maxWidth: "1060px",
+          color: "rgba(255,255,255,0.97)",
+          transitionDelay: "80ms",
         }}
       >
-        <span style={{ color: "rgba(255,255,255,0.97)" }}>Built to be attacked.</span>
-        <span style={{ color: "rgba(255,255,255,0.42)" }}>
-          {" "}A security-first multi-agent architecture, demonstrated live against 79 published categories of agentic attack.
-        </span>
+        Built to be attacked.
       </h1>
 
-      {/* CTAs */}
-      <div style={{ display: "flex", alignItems: "center", gap: "14px", marginTop: "40px" }}>
-        <Link
-          href="/playground"
-          className="btn-primary"
-          style={{ fontSize: "14.5px", fontWeight: 600, padding: "12px 22px", borderRadius: "7px" }}
-        >
-          Launch the playground
-        </Link>
-        <a
-          href="#architecture"
-          className="btn-outline"
-          style={{ fontSize: "14.5px", fontWeight: 500, padding: "12px 22px", borderRadius: "7px" }}
-        >
-          Read the architecture
-        </a>
-        <span
-          style={{
-            fontFamily: "var(--font-geist-mono), monospace",
-            fontSize: "12.5px",
-            color: "rgba(255,255,255,0.35)",
-            marginLeft: "10px",
-          }}
-        >
-          OWASP AOS · NIST AI RMF · MITRE ATLAS · ATF
-        </span>
-      </div>
-
-      {/* live ledger strip */}
-      <div
-        data-hero-stats
+      <p
+        data-rv
         style={{
-          marginTop: "88px",
-          borderTop: "1px solid rgba(255,255,255,0.09)",
-          borderBottom: "1px solid rgba(255,255,255,0.09)",
-          display: "grid",
-          gridTemplateColumns: "repeat(4, 1fr)",
+          margin: "28px 0 0",
+          maxWidth: "560px",
+          fontSize: "clamp(17px,1.5vw,20px)",
+          lineHeight: 1.5,
+          color: "rgba(255,255,255,0.7)",
+          transitionDelay: "160ms",
         }}
       >
-        {HERO_STATS.map((s, i) => (
-          <div
-            key={s.label}
-            style={{
-              padding: "26px 28px",
-              borderRight: i < 3 ? "1px solid rgba(255,255,255,0.07)" : undefined,
-              display: "flex",
-              flexDirection: "column",
-              gap: "8px",
-            }}
-          >
-            <div
-              style={{
-                display: "flex", alignItems: "center", gap: "8px",
-                fontFamily: "var(--font-geist-mono), monospace",
-                fontSize: "11px", letterSpacing: "0.1em",
-                textTransform: "uppercase", color: "rgba(255,255,255,0.4)",
-              }}
-            >
+        A security-first multi-agent system, tested live against 79 categories of agentic attack.
+      </p>
+
+      <div
+        data-rv
+        style={{ marginTop: "36px", display: "flex", flexWrap: "wrap", gap: "12px", transitionDelay: "240ms" }}
+      >
+        <Link href="/playground" className="btn btn-p">
+          Launch the playground
+        </Link>
+        <Link href="/architecture" className="btn btn-g">
+          Read the architecture
+        </Link>
+      </div>
+
+      <div
+        data-rv
+        style={{
+          marginTop: "clamp(64px,8vw,112px)",
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))",
+          gap: "1px",
+          background: "rgba(255,255,255,0.08)",
+          border: "1px solid rgba(255,255,255,0.08)",
+        }}
+      >
+        {stats.map((s) => (
+          <div key={s.label} className="cell hover:bg-[#101113] transition-colors" style={{ padding: "26px 24px 28px" }}>
+            <div className="eb" style={{ fontSize: "11px" }}>
               {s.label}
             </div>
             <div
+              className="mono"
               style={{
-                fontFamily: "var(--font-geist-mono), monospace",
-                fontSize: "34px", fontWeight: 600,
-                letterSpacing: "-0.02em",
+                marginTop: "14px",
+                fontSize: "38px",
+                lineHeight: 1,
+                fontWeight: 500,
+                fontVariantNumeric: "tabular-nums",
                 color: s.color,
               }}
             >
-              {liveValues[i]}
+              {s.value}
             </div>
-            <div style={{ fontSize: "12.5px", color: "rgba(255,255,255,0.38)" }}>{s.sub}</div>
+            <div style={{ marginTop: "12px", fontSize: "13px", color: "rgba(255,255,255,0.55)" }}>{s.sub}</div>
           </div>
         ))}
       </div>
 
-      {/* health tick */}
-      <div
-        style={{
-          display: "flex", alignItems: "center", gap: "8px",
-          padding: "12px 2px 0",
-          fontFamily: "var(--font-geist-mono), monospace",
-          fontSize: "11.5px", color: "rgba(255,255,255,0.32)",
-        }}
-      >
-        <span
-          style={{
-            width: "6px", height: "6px", borderRadius: "50%",
-            background: "#3ECF8E",
-            animation: "citadel-pulse 2.2s ease-in-out infinite",
-            flexShrink: 0,
-          }}
-        />
-        <span>
-          SYSTEM: LIVE — telemetry from /sse/health · updated {healthTick}
-        </span>
+      <div data-rv className="mono" style={{ padding: "14px 0 0", fontSize: "12px", color: "rgba(255,255,255,0.55)" }}>
+        Aligned to OWASP AOS · NIST AI RMF · MITRE ATLAS · ATF
       </div>
     </section>
   );

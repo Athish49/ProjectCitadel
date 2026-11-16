@@ -1,4 +1,4 @@
-# SecureClaim AI — Resilient Agentic AI
+# Project Citadel — Resilient Agentic AI
 
 A multi-agent insurance-claims pipeline engineered against a 79-category attack taxonomy. Built as a security-engineering portfolio piece: the insurance domain is a vehicle, not the subject.
 

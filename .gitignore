@@ -10,6 +10,9 @@
 .vscode/
 *.swp
 
+# Claude Code local state (settings, worktrees, session files) — never shared
+.claude/
+
 # -----------------------------------------------------------------------------
 # Environment & secrets — never commit real credentials
 # -----------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-# SecureClaim AI — Technical Architecture Document (TAD)
+# Project Citadel — Technical Architecture Document (TAD)
 
 **Version:** 2.1
 **Date:** June 14, 2026
@@ -10,7 +10,7 @@
 
 ## 1. Architecture Overview
 
-SecureClaim AI is organised around a small set of **named architectural defense patterns**, each defending a defined slice of the 79-category attack taxonomy. The goal of the architecture is not to maximise feature surface but to make each defense visible, traceable, and demonstrable.
+Project Citadel is organised around a small set of **named architectural defense patterns**, each defending a defined slice of the 79-category attack taxonomy. The goal of the architecture is not to maximise feature surface but to make each defense visible, traceable, and demonstrable.
 
 ### 1.1 Architecture Principles
 
@@ -349,7 +349,7 @@ The `ProjectCitadel-fraud_rules` (SECRET) collection is **never fetched** for pl
 
 ### 2.11 Adversarial Agent
 
-A separate process running Claude Haiku 4.5 with a system prompt instructing it to attempt attacks from the taxonomy against a sandboxed instance of SecureClaim AI. Its results stream live to the Console.
+A separate process running Claude Haiku 4.5 with a system prompt instructing it to attempt attacks from the taxonomy against a sandboxed instance of Project Citadel. Its results stream live to the Console.
 
 | Property | Value |
 |----------|-------|
@@ -598,7 +598,7 @@ The agent system exposes a dedicated `/showcase` API surface, read-only for ever
 ### 6.2 Directory Structure
 
 ```
-secureclaim-ai/
+project-citadel/
 ├── agent_system/
 │   ├── orchestrator/                   # deterministic state machine
 │   │   ├── state.py

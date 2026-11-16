@@ -1,4 +1,4 @@
-"""OpenTelemetry setup for SecureClaim AI (task 1.1.6)."""
+"""OpenTelemetry setup for Project Citadel (task 1.1.6)."""
 from __future__ import annotations
 
 from opentelemetry import trace

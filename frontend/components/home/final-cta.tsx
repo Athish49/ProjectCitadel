@@ -1,82 +1,44 @@
-"use client";
-
 import Link from "next/link";
 
 export function FinalCTA() {
   return (
-    <section
-      style={{
-        marginTop: "160px",
-        borderTop: "1px solid rgba(255,255,255,0.09)",
-        background: "#0B0C0E",
-      }}
-    >
+    <section style={{ marginTop: "clamp(88px,10vw,150px)", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
       <div
+        data-rv
         style={{
-          maxWidth: "1240px",
+          maxWidth: "1264px",
           margin: "0 auto",
-          padding: "110px 32px",
+          padding: "clamp(80px,10vw,140px) 32px",
           display: "flex",
-          flexDirection: "column",
-          alignItems: "flex-start",
-          gap: "28px",
+          flexWrap: "wrap",
+          alignItems: "flex-end",
+          justifyContent: "space-between",
+          gap: "36px 64px",
         }}
       >
-        <div
-          style={{
-            fontFamily: "var(--font-geist-mono), monospace",
-            fontSize: "12px", letterSpacing: "0.1em",
-            color: "rgba(255,255,255,0.4)",
-          }}
-        >
-          SYSTEM: LIVE — 48,317 ATTEMPTS LOGGED · CHAIN INTACT
-        </div>
-
-        <div
-          style={{
-            fontSize: "clamp(36px, 4vw, 56px)",
-            fontWeight: 600,
-            letterSpacing: "-0.03em",
-            lineHeight: 1.1,
-            color: "rgba(255,255,255,0.97)",
-          }}
-        >
-          Try to break it.
-        </div>
-
-        <div
-          style={{
-            fontSize: "16px",
-            color: "rgba(255,255,255,0.5)",
-            maxWidth: "560px",
-            lineHeight: 1.6,
-          }}
-        >
-          Every payload you fire runs the production pipeline and writes real audit rows. If you find something the adversarial agent hasn&apos;t, it becomes a GitHub issue with your trace attached.
-        </div>
-
-        <div style={{ display: "flex", gap: "14px" }}>
-          <Link
-            href="/playground"
-            className="btn-primary"
+        <div style={{ maxWidth: "640px" }}>
+          <h2
             style={{
-              fontSize: "14.5px", fontWeight: 600,
-              padding: "13px 24px", borderRadius: "7px",
+              margin: 0,
+              fontSize: "clamp(40px,6vw,80px)",
+              lineHeight: 1,
+              letterSpacing: "-0.04em",
+              fontWeight: 600,
+              color: "rgba(255,255,255,0.97)",
             }}
           >
+            Try to break it.
+          </h2>
+          <p style={{ margin: "22px 0 0", fontSize: "17px", color: "rgba(255,255,255,0.7)", maxWidth: "520px" }}>
+            Every payload runs the production pipeline. Find something new and it becomes a public issue with your trace
+            attached.
+          </p>
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "12px" }}>
+          <Link href="/playground" className="btn btn-p">
             Launch the playground
           </Link>
-          <a
-            href="https://github.com/Athish49/ProjectCitadel"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="btn-outline"
-            style={{
-              fontSize: "14.5px", fontWeight: 500,
-              padding: "13px 24px", borderRadius: "7px",
-              fontFamily: "var(--font-geist-mono), monospace",
-            }}
-          >
+          <a href="https://github.com/Athish49/ProjectCitadel" target="_blank" rel="noopener noreferrer" className="btn btn-g">
             View source on GitHub
           </a>
         </div>

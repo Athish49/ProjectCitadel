@@ -1,4 +1,4 @@
-# SecureClaim AI — Backend
+# Project Citadel — Backend
 
 Resilient multi-agent claims pipeline. Specs live in `../development_docs/`. The Console (Next.js) lives in `../console/`.
 

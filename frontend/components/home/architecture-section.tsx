@@ -1,239 +1,147 @@
 "use client";
 
-import { Reveal } from "./reveal";
-import { ARCH_STAGES, DATA_LABELS, AGENTS } from "@/lib/data/home";
+import { useEffect, useState } from "react";
+import { SectionHeader } from "./section-header";
+import { ARCH_STAGES } from "@/lib/data/home";
 
 export function ArchitectureSection() {
+  const [stage, setStage] = useState(0);
+  const [pinned, setPinned] = useState(false);
+
+  // Auto-rotate through stages every 3.6s until the visitor picks one.
+  useEffect(() => {
+    if (pinned) return;
+    const id = setInterval(() => setStage((s) => (s + 1) % ARCH_STAGES.length), 3600);
+    return () => clearInterval(id);
+  }, [pinned]);
+
+  function pick(i: number) {
+    setStage(i);
+    setPinned(true);
+  }
+
+  const current = ARCH_STAGES[stage];
+
   return (
-    <section
-      id="architecture"
-      style={{ padding: "150px 32px 0", maxWidth: "1240px", margin: "0 auto" }}
-    >
-      <Reveal
-        style={{
-          fontFamily: "var(--font-geist-mono), monospace",
-          fontSize: "12px", letterSpacing: "0.1em",
-          color: "rgba(255,255,255,0.4)",
-        }}
-      >
-        1.0 — ARCHITECTURE
-      </Reveal>
+    <section id="architecture" style={{ maxWidth: "1264px", margin: "0 auto", padding: "clamp(88px,10vw,150px) 32px 0" }}>
+      <SectionHeader
+        eyebrow="01 — Architecture"
+        title="Every layer assumes the last one failed."
+        lead="Untrusted input is quarantined. Code decides the workflow. Privileged actions need a signed token no model can mint."
+        more={{ label: "Full architecture", href: "/architecture" }}
+      />
 
-      <Reveal
-        style={{
-          margin: "18px 0 0",
-          fontSize: "clamp(30px, 3vw, 42px)",
-          lineHeight: 1.16,
-          letterSpacing: "-0.028em",
-          fontWeight: 600,
-          maxWidth: "940px",
-        }}
-      >
-        <span style={{ color: "rgba(255,255,255,0.97)" }}>
-          There is no LLM in the orchestrator.
-        </span>
-        <span style={{ color: "rgba(255,255,255,0.42)" }}>
-          {" "}Untrusted input is quarantined, workflow decisions are plain code, and every privileged action requires a signed capability token the model cannot mint.
-        </span>
-      </Reveal>
-
-      {/* pipeline diagram */}
-      <Reveal
-        style={{
-          marginTop: "56px",
-          border: "1px solid rgba(255,255,255,0.09)",
-          background: "#0C0D0F",
-          padding: "34px 30px 30px",
-          overflowX: "auto",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "stretch", gap: 0, minWidth: "1080px" }}>
-          {ARCH_STAGES.map((st) => (
-            <div
-              key={st.label}
-              style={{ display: "flex", alignItems: "stretch", flex: st.flex }}
-            >
-              <div
-                style={{
-                  flex: 1,
-                  border: `1px solid ${st.border}`,
-                  background: "rgba(255,255,255,0.015)",
-                  padding: "16px 16px 14px",
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "10px",
-                }}
-              >
-                <div
-                  style={{
-                    fontFamily: "var(--font-geist-mono), monospace",
-                    fontSize: "10.5px", letterSpacing: "0.1em",
-                    textTransform: "uppercase", color: st.labelColor,
-                  }}
-                >
-                  {st.label}
-                </div>
-                <div
-                  style={{
-                    fontSize: "14.5px", fontWeight: 600,
-                    color: "rgba(255,255,255,0.92)", lineHeight: 1.3,
-                  }}
-                >
-                  {st.title}
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
-                  {st.items.map((it) => (
-                    <div
-                      key={it}
-                      style={{
-                        fontFamily: "var(--font-geist-mono), monospace",
-                        fontSize: "11.5px", color: "rgba(255,255,255,0.5)", lineHeight: 1.45,
-                      }}
-                    >
-                      {it}
-                    </div>
-                  ))}
-                </div>
-                <div
-                  style={{
-                    marginTop: "auto",
-                    fontSize: "11.5px",
-                    color: st.noteColor,
-                    fontFamily: "var(--font-geist-mono), monospace",
-                  }}
-                >
-                  {st.note}
-                </div>
-              </div>
-              {st.arrow && (
-                <div
-                  style={{
-                    display: "flex", alignItems: "center",
-                    padding: "0 8px",
-                    color: "rgba(62,207,142,0.7)",
-                    fontFamily: "var(--font-geist-mono), monospace",
-                    fontSize: "14px",
-                  }}
-                >
-                  {st.arrow}
-                </div>
-              )}
-            </div>
-          ))}
+      <div data-rv className="panel" style={{ marginTop: "48px" }}>
+        <div style={{ height: "2px", background: "rgba(255,255,255,0.06)" }}>
+          <div
+            style={{
+              height: "2px",
+              background: "#f4f4f5",
+              width: `${((stage + 1) / ARCH_STAGES.length) * 100}%`,
+              transition: "width .6s cubic-bezier(.2,.7,.2,1)",
+            }}
+          />
         </div>
 
-        {/* data label legend */}
         <div
           style={{
-            display: "flex", alignItems: "center", gap: "22px",
-            marginTop: "26px", paddingTop: "20px",
-            borderTop: "1px solid rgba(255,255,255,0.07)",
-            flexWrap: "wrap",
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))",
+            gap: "1px",
+            background: "rgba(255,255,255,0.08)",
+            borderBottom: "1px solid rgba(255,255,255,0.08)",
           }}
         >
-          <span
-            style={{
-              fontFamily: "var(--font-geist-mono), monospace",
-              fontSize: "11px", letterSpacing: "0.1em",
-              color: "rgba(255,255,255,0.4)",
-            }}
-          >
-            DATA LABELS
-          </span>
-          {DATA_LABELS.map((dl) => (
-            <span
-              key={dl.name}
-              style={{
-                display: "inline-flex", alignItems: "center", gap: "7px",
-                fontFamily: "var(--font-geist-mono), monospace",
-                fontSize: "12px", color: "rgba(255,255,255,0.6)",
-              }}
-            >
-              <span style={{ width: "8px", height: "8px", background: dl.color, flexShrink: 0 }} />
-              <span>{dl.name}</span>
-              <span style={{ color: "rgba(255,255,255,0.28)" }}>{dl.note}</span>
-            </span>
-          ))}
-        </div>
-      </Reveal>
-
-      {/* agent spec cards */}
-      <Reveal
-        data-agents-grid
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(4, 1fr)",
-          gap: "1px",
-          background: "rgba(255,255,255,0.08)",
-          border: "1px solid rgba(255,255,255,0.08)",
-          marginTop: "20px",
-        }}
-      >
-        {AGENTS.map((ag) => (
-          <div
-            key={ag.name}
-            style={{
-              background: "#0B0C0E",
-              padding: "22px 22px 20px",
-              display: "flex",
-              flexDirection: "column",
-              gap: "11px",
-            }}
-          >
-            <div
-              style={{
-                display: "flex", alignItems: "baseline",
-                justifyContent: "space-between", gap: "8px",
-              }}
-            >
-              <div style={{ fontSize: "15px", fontWeight: 600, color: "rgba(255,255,255,0.94)" }}>
-                {ag.name}
-              </div>
-              <div
+          {ARCH_STAGES.map((st, i) => {
+            const active = i === stage;
+            return (
+              <button
+                key={st.name}
+                type="button"
+                onClick={() => pick(i)}
+                aria-pressed={active}
                 style={{
-                  fontFamily: "var(--font-geist-mono), monospace",
-                  fontSize: "10.5px", color: "rgba(255,255,255,0.38)",
+                  appearance: "none",
+                  font: "inherit",
+                  color: "inherit",
+                  textAlign: "left",
+                  cursor: "pointer",
+                  border: 0,
+                  padding: "22px 20px 24px",
+                  minHeight: "44px",
+                  transition: "background .25s",
+                  background: active ? "#131417" : "#0a0b0c",
                 }}
               >
-                {ag.model}
-              </div>
-            </div>
-            <div style={{ fontSize: "13px", lineHeight: 1.55, color: "rgba(255,255,255,0.55)" }}>
-              {ag.role}
-            </div>
-            <div
-              style={{
-                marginTop: "auto", paddingTop: "10px",
-                borderTop: "1px solid rgba(255,255,255,0.06)",
-                fontFamily: "var(--font-geist-mono), monospace",
-                fontSize: "11.5px", lineHeight: 1.6,
-              }}
-            >
-              <div style={{ color: "rgba(255,255,255,0.45)" }}>{ag.access}</div>
-              <div style={{ color: "#E5484D" }}>{ag.cannot}</div>
-            </div>
-          </div>
-        ))}
-      </Reveal>
+                <span
+                  className="mono"
+                  style={{
+                    display: "block",
+                    fontSize: "11px",
+                    letterSpacing: "0.12em",
+                    color: active ? "rgba(255,255,255,0.8)" : "rgba(255,255,255,0.55)",
+                  }}
+                >
+                  0{i + 1} · {st.tag}
+                </span>
+                <span
+                  style={{
+                    display: "block",
+                    marginTop: "10px",
+                    fontSize: "17px",
+                    fontWeight: 500,
+                    color: active ? "#ffffff" : "rgba(255,255,255,0.7)",
+                  }}
+                >
+                  {st.name}
+                </span>
+              </button>
+            );
+          })}
+        </div>
 
-      <Reveal
-        style={{
-          marginTop: "14px",
-          fontSize: "13px",
-          color: "rgba(255,255,255,0.4)",
-        }}
-      >
-        The quarantined parser is the most important single defense: it has{" "}
-        <span
+        <div
           style={{
-            fontFamily: "var(--font-geist-mono), monospace",
-            color: "rgba(255,255,255,0.7)",
+            padding: "32px 28px 34px",
+            display: "flex",
+            flexWrap: "wrap",
+            gap: "24px 56px",
+            alignItems: "center",
+            justifyContent: "space-between",
+            minHeight: "132px",
           }}
         >
-          zero tools
-        </span>
-        , emits only schema-validated JSON, and sees no data worth stealing. Actor LLMs never receive raw user text.
-      </Reveal>
+          <p
+            style={{
+              margin: 0,
+              flex: "1 1 380px",
+              fontSize: "clamp(18px,1.7vw,22px)",
+              lineHeight: 1.4,
+              letterSpacing: "-0.01em",
+              maxWidth: "560px",
+            }}
+          >
+            {current.line}
+          </p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", flex: "1 1 340px", justifyContent: "flex-start" }}>
+            {current.facts.map((f) => (
+              <span
+                key={f}
+                className="mono"
+                style={{
+                  fontSize: "12px",
+                  padding: "7px 11px",
+                  border: "1px solid rgba(255,255,255,0.12)",
+                  borderRadius: "4px",
+                  color: "rgba(255,255,255,0.8)",
+                }}
+              >
+                {f}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
     </section>
   );
 }

@@ -1,0 +1,62 @@
+/* Architecture page — rules that the design prototype expresses as :hover /
+   :focus-visible / keyframe CSS and that inline styles can't express. Scoped
+   to this page via CSS module so it can't leak into (or be affected by)
+   other pages. */
+
+.node {
+  appearance: none;
+  font-family: inherit;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  transition: background 0.3s, border-color 0.3s, color 0.3s, opacity 0.3s;
+}
+.node:hover {
+  border-color: rgba(255, 255, 255, 0.5) !important;
+}
+.node:focus-visible {
+  outline: 2px solid #5b8def;
+  outline-offset: 2px;
+}
+
+.pick:focus-visible {
+  outline: 2px solid #5b8def;
+  outline-offset: 2px;
+}
+
+.gate {
+  transition: background 0.3s, border-color 0.3s, opacity 0.3s;
+}
+
+.tr {
+  transition: background 0.3s, border-color 0.3s, color 0.3s, opacity 0.3s;
+}
+
+.table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+@keyframes archFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.fadeUp {
+  animation: archFadeUp 0.35s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .node,
+  .gate,
+  .tr,
+  .fadeUp {
+    animation: none !important;
+    transition: none !important;
+  }
+}

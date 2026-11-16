@@ -1,4 +1,4 @@
-"""SecureClaim AI — FastAPI application entry point (task 1.1.6)."""
+"""Project Citadel — FastAPI application entry point (task 1.1.6)."""
 from __future__ import annotations
 
 import logging
@@ -17,7 +17,7 @@ from app.telemetry import init_telemetry
 
 log = logging.getLogger(__name__)
 
-app = FastAPI(title="SecureClaim AI", version="0.1.0")
+app = FastAPI(title="Project Citadel", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,

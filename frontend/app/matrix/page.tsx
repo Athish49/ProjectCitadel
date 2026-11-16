@@ -1,210 +1,154 @@
 import type { Metadata } from "next";
-import { PageNav } from "@/components/layout/page-nav";
+import { Nav } from "@/components/layout/nav";
 import { Footer } from "@/components/layout/footer";
 import { MatrixTable } from "@/components/matrix/matrix-table";
+import { ScrollRevealRoot } from "@/components/matrix/scroll-reveal-root";
 import { LIVE_COUNT, ARCH_COUNT, OOS_COUNT } from "@/lib/data/matrix";
 
 export const metadata: Metadata = {
   title: "Attack–Defense Matrix — Project Citadel",
 };
 
+const mono: React.CSSProperties = { fontFamily: "var(--font-geist-mono), monospace" };
+
 export default function MatrixPage() {
   return (
-    <>
-      <PageNav />
+    <ScrollRevealRoot style={{ background: "#0A0B0C", color: "rgba(255,255,255,0.95)", minHeight: "100vh" }}>
+      <Nav />
 
-      <main style={{ paddingTop: "80px" }}>
+      <main>
         {/* Hero */}
-        <section
-          style={{
-            maxWidth: "1200px",
-            margin: "0 auto",
-            padding: "72px 40px 48px",
-          }}
-        >
-          {/* breadcrumb */}
-          <div
-            style={{
-              fontFamily: "var(--font-geist-mono), monospace",
-              fontSize: "11.5px",
-              letterSpacing: "0.12em",
-              color: "rgba(255,255,255,0.35)",
-              marginBottom: "28px",
-            }}
-          >
-            Project Citadel / Attack–Defense Matrix
-          </div>
+        <section style={{ maxWidth: "1264px", margin: "0 auto", padding: "clamp(64px,9vw,120px) 32px 0" }}>
+          <div data-rv className="eb">Attack–defense matrix</div>
 
-          {/* headline */}
           <h1
+            data-rv
             style={{
-              fontSize: "clamp(34px, 5vw, 58px)",
-              fontWeight: 700,
-              letterSpacing: "-0.02em",
-              lineHeight: 1.08,
-              margin: "0 0 18px",
-              color: "rgba(255,255,255,0.97)",
-              maxWidth: "780px",
+              margin: "22px 0 0",
+              fontSize: "clamp(40px,6.4vw,84px)",
+              lineHeight: 1,
+              letterSpacing: "-0.04em",
+              fontWeight: 600,
+              maxWidth: "960px",
+              transitionDelay: "80ms",
             }}
           >
-            79 attack classes.{" "}
-            <span style={{ color: "rgba(255,255,255,0.38)" }}>
-              Numbers, never adjectives.
-            </span>
+            79 attack classes. Numbers, not adjectives.
           </h1>
 
           <p
+            data-rv
             style={{
-              fontSize: "16px",
-              color: "rgba(255,255,255,0.55)",
-              lineHeight: 1.65,
-              maxWidth: "580px",
-              margin: "0 0 52px",
+              margin: "26px 0 0",
+              maxWidth: "560px",
+              fontSize: "clamp(17px,1.5vw,19px)",
+              lineHeight: 1.5,
+              color: "rgba(255,255,255,0.7)",
+              transitionDelay: "160ms",
             }}
           >
-            Every known attack class against production agentic systems — classified,
-            linked to a named defence, and continuously tested.
+            Each class is classified, linked to a named defense and tested where a test is possible.
           </p>
 
-          {/* stats grid */}
-          <div
-            data-mstats-grid=""
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(3, 1fr)",
-              gap: "1px",
-              background: "rgba(255,255,255,0.07)",
-              border: "1px solid rgba(255,255,255,0.07)",
-              maxWidth: "600px",
-            }}
-          >
-            {[
-              { n: LIVE_COUNT,  label: "LIVE",                      color: "#3ECF8E", desc: "tested in CI with real payloads" },
-              { n: ARCH_COUNT,  label: "ARCHITECTURAL",              color: "#5FA8A0", desc: "prevented by design, not runtime checks" },
-              { n: OOS_COUNT,   label: "OUT-OF-SCOPE",               color: "rgba(255,255,255,0.35)", desc: "acknowledged, not in threat model" },
-            ].map(({ n, label, color, desc }) => (
-              <div
-                key={label}
-                style={{
-                  padding: "24px 20px",
-                  background: "#0B0C0E",
-                }}
-              >
-                <div
-                  style={{
-                    fontFamily: "var(--font-geist-mono), monospace",
-                    fontSize: "32px",
-                    fontWeight: 700,
-                    color,
-                    marginBottom: "6px",
-                    lineHeight: 1,
-                  }}
-                >
-                  {n}
+          <div data-rv style={{ marginTop: "56px", transitionDelay: "240ms" }}>
+            <div
+              role="img"
+              aria-label={`${LIVE_COUNT} live, ${ARCH_COUNT} architectural, ${OOS_COUNT} out of scope`}
+              style={{ display: "flex", gap: "3px", height: "10px" }}
+            >
+              <div data-grow style={{ flex: `${LIVE_COUNT} 1 0`, background: "#3ecf8e" }} />
+              <div data-grow style={{ flex: `${ARCH_COUNT} 1 0`, background: "#5b8def" }} />
+              <div data-grow style={{ flex: `${OOS_COUNT} 1 0`, background: "rgba(255,255,255,0.28)" }} />
+            </div>
+
+            <div
+              style={{
+                marginTop: "24px",
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))",
+                gap: "24px 48px",
+              }}
+            >
+              <div>
+                <div style={{ display: "flex", alignItems: "baseline", gap: "12px" }}>
+                  <span style={{ ...mono, fontSize: "36px", lineHeight: 1, fontWeight: 500, color: "#3ecf8e" }}>
+                    {LIVE_COUNT}
+                  </span>
+                  <span className="eb">Live</span>
                 </div>
-                <div
-                  style={{
-                    fontFamily: "var(--font-geist-mono), monospace",
-                    fontSize: "10.5px",
-                    letterSpacing: "0.1em",
-                    color: "rgba(255,255,255,0.4)",
-                    marginBottom: "6px",
-                  }}
-                >
-                  {label}
-                </div>
-                <div
-                  style={{
-                    fontSize: "12px",
-                    color: "rgba(255,255,255,0.35)",
-                    lineHeight: 1.4,
-                  }}
-                >
-                  {desc}
-                </div>
+                <p style={{ margin: "10px 0 0", fontSize: "14px", color: "rgba(255,255,255,0.68)" }}>
+                  Tested in CI with real payloads.
+                </p>
               </div>
-            ))}
+              <div>
+                <div style={{ display: "flex", alignItems: "baseline", gap: "12px" }}>
+                  <span style={{ ...mono, fontSize: "36px", lineHeight: 1, fontWeight: 500, color: "#5b8def" }}>
+                    {ARCH_COUNT}
+                  </span>
+                  <span className="eb">Architectural</span>
+                </div>
+                <p style={{ margin: "10px 0 0", fontSize: "14px", color: "rgba(255,255,255,0.68)" }}>
+                  Prevented by design, not runtime checks.
+                </p>
+              </div>
+              <div>
+                <div style={{ display: "flex", alignItems: "baseline", gap: "12px" }}>
+                  <span style={{ ...mono, fontSize: "36px", lineHeight: 1, fontWeight: 500, color: "rgba(255,255,255,0.7)" }}>
+                    {OOS_COUNT}
+                  </span>
+                  <span className="eb">Out of scope</span>
+                </div>
+                <p style={{ margin: "10px 0 0", fontSize: "14px", color: "rgba(255,255,255,0.68)" }}>
+                  Acknowledged, not in the threat model.
+                </p>
+              </div>
+            </div>
           </div>
         </section>
 
-        {/* Table section */}
-        <section
-          style={{
-            maxWidth: "1200px",
-            margin: "0 auto",
-            padding: "0 40px 80px",
-          }}
-        >
-          <MatrixTable />
+        {/* Filter bar + table */}
+        <section style={{ maxWidth: "1264px", margin: "0 auto", padding: "64px 32px 0" }}>
+          <div data-rv style={{ transitionDelay: "100ms" }}>
+            <MatrixTable />
+          </div>
         </section>
 
         {/* CTA */}
-        <section
-          style={{
-            marginTop: "120px",
-            borderTop: "1px solid rgba(255,255,255,0.09)",
-            background: "#0B0C0E",
-          }}
-        >
+        <section style={{ marginTop: "clamp(88px,10vw,140px)", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
           <div
+            data-rv
             style={{
-              maxWidth: "1240px",
+              maxWidth: "1264px",
               margin: "0 auto",
-              padding: "90px 32px",
+              padding: "clamp(72px,9vw,120px) 32px",
               display: "flex",
-              flexDirection: "column",
-              alignItems: "flex-start",
-              gap: "24px",
+              flexWrap: "wrap",
+              alignItems: "flex-end",
+              justifyContent: "space-between",
+              gap: "32px 64px",
             }}
           >
-            <div
+            <h2
               style={{
-                fontSize: "clamp(30px, 3.4vw, 46px)",
+                margin: 0,
+                fontSize: "clamp(34px,5vw,64px)",
+                lineHeight: 1.02,
+                letterSpacing: "-0.04em",
                 fontWeight: 600,
-                letterSpacing: "-0.03em",
-                lineHeight: 1.14,
-                color: "rgba(255,255,255,0.97)",
-                maxWidth: "760px",
+                maxWidth: "680px",
               }}
             >
-              Every row traces back to a named pattern.
-            </div>
-            <div style={{ display: "flex", gap: "14px", flexWrap: "wrap" }}>
-              <a
-                href="/patterns"
-                className="btn-primary"
-                style={{
-                  display: "inline-block",
-                  fontSize: "14.5px",
-                  fontWeight: 600,
-                  padding: "13px 24px",
-                  borderRadius: "7px",
-                  textDecoration: "none",
-                }}
-              >
-                See the 12 defence patterns
-              </a>
-              <a
-                href="/playground"
-                className="btn-outline"
-                style={{
-                  display: "inline-block",
-                  fontSize: "14.5px",
-                  fontWeight: 500,
-                  padding: "13px 24px",
-                  borderRadius: "7px",
-                  textDecoration: "none",
-                  background: "transparent",
-                }}
-              >
-                Try the playground
-              </a>
+              Every defense has a name.
+            </h2>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "12px" }}>
+              <a className="btn btn-p" href="/patterns">See the 12 patterns</a>
+              <a className="btn btn-g" href="/playground">Try the playground</a>
             </div>
           </div>
         </section>
       </main>
 
       <Footer />
-    </>
+    </ScrollRevealRoot>
   );
 }

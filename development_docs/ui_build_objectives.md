@@ -1,12 +1,12 @@
-# SecureClaim AI — Objectives & System Capabilities Brief
+# Project Citadel — Objectives & System Capabilities Brief
 
-**Purpose of this document:** Input brief for designing the Resilience Console — the public-facing showcase website for the SecureClaim AI project. This document describes what we are trying to achieve, who we are trying to convince, what the backend system can do, and what data and capabilities are available to expose in the UI. There are no frontend implementation constraints in this document; the goal is to give a complete picture of the system so the best possible UI can be designed from scratch.
+**Purpose of this document:** Input brief for designing the Resilience Console — the public-facing showcase website for the Project Citadel project. This document describes what we are trying to achieve, who we are trying to convince, what the backend system can do, and what data and capabilities are available to expose in the UI. There are no frontend implementation constraints in this document; the goal is to give a complete picture of the system so the best possible UI can be designed from scratch.
 
 ---
 
 ## 1. What We Are Building
 
-SecureClaim AI is a **security-first multi-agent reference architecture**. It uses an auto-insurance claims processing pipeline as a live, attackable specimen to demonstrate that agentic AI systems can be engineered to resist a rigorous, published taxonomy of 79 attack categories.
+Project Citadel is a **security-first multi-agent reference architecture**. It uses an auto-insurance claims processing pipeline as a live, attackable specimen to demonstrate that agentic AI systems can be engineered to resist a rigorous, published taxonomy of 79 attack categories.
 
 The insurance domain is incidental. The real product is the **architecture**: a set of named, composable, demonstrable defense patterns that make the agent system measurably resilient against the categories of attack that real agentic AI deployments face.
 

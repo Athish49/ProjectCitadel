@@ -1,5 +1,5 @@
 """
-Seed script for SecureClaim AI (task 1.1.5).
+Seed script for Project Citadel (task 1.1.5).
 
 Wipes all application data tables and loads 42 deterministic records across
 customers, pii_vault, policies, vehicles, claims, evidence, fraud_scores,

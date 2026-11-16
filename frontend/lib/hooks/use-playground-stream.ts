@@ -20,17 +20,36 @@ interface LayerResultPayload {
   name: string;
   pattern: string | null;
   status: TraceLayerStatus;
-  durationMs: number;
+  durationMs: number | null;
   events: TraceEvent[];
 }
 
 interface VerdictPayload {
   traceId: string;
-  outcome: "BLOCKED" | "PARTIAL" | "BREACH" | "CLEAN";
+  outcome: "BLOCKED" | "HELD" | "CLEAN" | "ERROR";
   blockedByPattern: string | null;
   blockedByLayer: string | null;
+  policyHeld: string | null;
   summary: string;
+  // Authoritative final state for all 7 layers — always present, always
+  // covers every layer (see backend/app/showcase/playground_sse.py). The
+  // verdict handler below replaces the client's accumulated layer state with
+  // this wholesale, rather than trusting what layer_result events implied.
+  layers: LayerResultPayload[];
   ts: string;
+}
+
+function isKnownLayerStatus(status: unknown): status is TraceLayerStatus {
+  return (
+    status === "pending" ||
+    status === "running" ||
+    status === "passed" ||
+    status === "blocked" ||
+    status === "held" ||
+    status === "skipped" ||
+    status === "error" ||
+    status === "not_reached"
+  );
 }
 
 // ── Initial pending layers ────────────────────────────────────────────────────
@@ -139,20 +158,56 @@ export function usePlaygroundStream() {
       const es = new EventSource(sseUrl);
       esRef.current = es;
 
+      // Shared by stream_error and onerror: the stream died before a verdict
+      // arrived. Whichever layer was mid-flight becomes "error", everything
+      // after it "not_reached" — never left silently "pending"/"running",
+      // which would otherwise render as an ambiguous or stale PASS-looking state.
+      const markIncomplete = (layers: TraceLayer[]): TraceLayer[] => {
+        let sawIncomplete = false;
+        return layers.map((l): TraceLayer => {
+          // Preserve every real terminal status already reported by the
+          // backend (passed/blocked/held/error/skipped) — only "pending" and
+          // "running" (client-only placeholders) get rewritten. Rewriting
+          // only the first running layer to "error" and leaving the rest
+          // "not_reached" would put a PASS row above and a NOT REACHED row
+          // directly below a layer the stream actually died inside — the
+          // exact ordering inconsistency this fix exists to prevent.
+          if (l.status !== "pending" && l.status !== "running") {
+            return l;
+          }
+          const status: TraceLayerStatus = !sawIncomplete && l.status === "running" ? "error" : "not_reached";
+          sawIncomplete = true;
+          return { ...l, status };
+        });
+      };
+
       es.addEventListener("stream_error", (e: MessageEvent) => {
-        const data = JSON.parse(e.data) as { message: string };
+        let message = "Stream error.";
+        try {
+          message = (JSON.parse(e.data) as { message: string }).message;
+        } catch {
+          /* malformed payload — keep the generic message */
+        }
         setState((prev) => ({
           ...prev,
           isStreaming: false,
-          error: data.message,
+          error: message,
+          trace: prev.trace ? { ...prev.trace, layers: markIncomplete(prev.trace.layers) } : prev.trace,
         }));
         es.close();
         esRef.current = null;
       });
 
       es.addEventListener("layer_result", (e: MessageEvent) => {
-        const data = JSON.parse(e.data) as LayerResultPayload;
-        const idx  = layerIndexById(data.layerId);
+        let data: LayerResultPayload;
+        try {
+          data = JSON.parse(e.data) as LayerResultPayload;
+        } catch {
+          return;
+        }
+        const idx = layerIndexById(data.layerId);
+        if (idx === -1) return;
+        const status: TraceLayerStatus = isKnownLayerStatus(data.status) ? data.status : "error";
 
         setState((prev) => {
           if (!prev.trace) return prev;
@@ -161,13 +216,13 @@ export function usePlaygroundStream() {
             if (l.id === data.layerId) {
               return {
                 ...l,
-                status:     data.status,
+                status,
                 durationMs: data.durationMs,
                 events:     data.events,
               };
             }
-            // Mark next layer as running only if this layer passed (not blocked)
-            if (i === idx + 1 && l.status === "pending" && data.status !== "blocked") {
+            // Mark next layer as running only if this layer passed (not blocked/held/error)
+            if (i === idx + 1 && l.status === "pending" && status === "passed") {
               return { ...l, status: "running" };
             }
             return l;
@@ -178,21 +233,54 @@ export function usePlaygroundStream() {
       });
 
       es.addEventListener("verdict", (e: MessageEvent) => {
-        const data = JSON.parse(e.data) as VerdictPayload;
+        let data: VerdictPayload;
+        try {
+          data = JSON.parse(e.data) as VerdictPayload;
+        } catch {
+          setState((prev) => ({ ...prev, isStreaming: false, error: "Malformed verdict from server." }));
+          es.close();
+          esRef.current = null;
+          return;
+        }
 
+        const outcome: TraceVerdict["outcome"] =
+          data.outcome === "BLOCKED" || data.outcome === "HELD" || data.outcome === "CLEAN" || data.outcome === "ERROR"
+            ? data.outcome
+            : "ERROR";
         const verdict: TraceVerdict = {
-          outcome:          data.outcome as TraceVerdict["outcome"],
-          blockedByPattern: data.blockedByPattern as TraceVerdict["blockedByPattern"],
+          outcome,
+          blockedByPattern: data.blockedByPattern,
           blockedByLayer:   data.blockedByLayer,
+          policyHeld:       data.policyHeld ?? null,
           summary:          data.summary,
         };
 
         setState((prev) => {
           if (!prev.trace) return { ...prev, isStreaming: false };
-          // Reset any layers still "running" — they weren't evaluated before the stream ended
-          const layers = prev.trace.layers.map((l): TraceLayer =>
-            l.status === "running" ? { ...l, status: "pending" as TraceLayerStatus } : l
-          );
+          // Authoritative replace: trust verdict.layers over whatever the
+          // streamed layer_result events implied, so a layer downstream of
+          // the decisive one can never be left (or shown) as PASS. If the
+          // payload is malformed (missing/non-array layers), fall back to
+          // marking whatever is still pending/running as incomplete rather
+          // than throwing inside the state updater.
+          let layers: TraceLayer[];
+          if (Array.isArray(data.layers)) {
+            const byId = new Map(data.layers.map((l) => [l.layerId, l]));
+            layers = prev.trace.layers.map((l): TraceLayer => {
+              const authoritative = byId.get(l.id);
+              if (!authoritative) return { ...l, status: "not_reached" };
+              return {
+                ...l,
+                name:       authoritative.name,
+                pattern:    authoritative.pattern,
+                status:     isKnownLayerStatus(authoritative.status) ? authoritative.status : "error",
+                durationMs: authoritative.durationMs,
+                events:     Array.isArray(authoritative.events) ? authoritative.events : [],
+              };
+            });
+          } else {
+            layers = markIncomplete(prev.trace.layers);
+          }
           return {
             ...prev,
             isStreaming: false,
@@ -211,6 +299,10 @@ export function usePlaygroundStream() {
           error: prev.trace?.verdict
             ? null
             : "Stream disconnected unexpectedly. Try resubmitting.",
+          trace:
+            prev.trace && !prev.trace.verdict
+              ? { ...prev.trace, layers: markIncomplete(prev.trace.layers) }
+              : prev.trace,
         }));
         es.close();
         esRef.current = null;

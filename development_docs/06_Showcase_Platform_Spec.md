@@ -1,4 +1,4 @@
-# SecureClaim AI — Resilience Console (Showcase Platform Spec)
+# Project Citadel — Resilience Console (Showcase Platform Spec)
 
 **Version:** 2.0
 **Date:** May 27, 2026
@@ -142,7 +142,7 @@ The component library is built on **shadcn/ui** with custom primitives:
 ### 5.1 Top-level navigation (persistent header)
 
 ```
-SECURECLAIM AI — Resilience Console
+PROJECT CITADEL — Resilience Console
 ───────────────────────────────────────────────────────────────────
   Playground  ·  Architecture  ·  Formal  ·  Matrix  ·  Patterns
   Adversary   ·  Audit Feed    ·  Residual  ·  Demo  ·  Docs

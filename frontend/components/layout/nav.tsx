@@ -12,135 +12,113 @@ const NAV_LINKS = [
   { label: "Formal", href: "/formal" },
 ];
 
+/** Every page's header CTA reads "Launch playground → /playground",
+ * except the Playground page itself, which points back at the architecture. */
+const PLAYGROUND_CTA = { label: "Launch playground", href: "/playground" };
+const ARCHITECTURE_CTA = { label: "Read the architecture", href: "/architecture" };
+
 export function Nav() {
   const pathname = usePathname();
+  const cta = pathname === "/playground" ? ARCHITECTURE_CTA : PLAYGROUND_CTA;
 
   return (
-    <nav
+    <header
       style={{
-        position: "fixed",
+        position: "sticky",
         top: 0,
-        left: 0,
-        right: 0,
-        zIndex: 100,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        padding: "0 32px",
-        height: "60px",
-        background: "rgba(10,11,12,0.82)",
-        backdropFilter: "blur(14px)",
-        WebkitBackdropFilter: "blur(14px)",
+        zIndex: 20,
+        background: "rgba(10,11,12,0.86)",
+        backdropFilter: "blur(12px)",
+        WebkitBackdropFilter: "blur(12px)",
         borderBottom: "1px solid rgba(255,255,255,0.07)",
       }}
     >
-      {/* Logo */}
-      <Link
-        href="/"
+      <div
         style={{
+          maxWidth: "1264px",
+          margin: "0 auto",
+          padding: "10px 32px",
           display: "flex",
+          flexWrap: "wrap",
           alignItems: "center",
-          gap: "10px",
-          color: "rgba(255,255,255,0.95)",
+          justifyContent: "space-between",
+          gap: "8px 28px",
         }}
       >
-        <span
+        <Link
+          href="/"
           style={{
-            display: "inline-flex",
-            width: "22px",
-            height: "22px",
-            border: "1.5px solid rgba(255,255,255,0.9)",
+            display: "flex",
             alignItems: "center",
-            justifyContent: "center",
-            fontFamily: "var(--font-geist-mono), monospace",
-            fontSize: "11px",
-            fontWeight: 600,
-            flexShrink: 0,
-          }}
-        >
-          C
-        </span>
-        <span
-          style={{
+            gap: "10px",
+            textDecoration: "none",
             fontWeight: 600,
             fontSize: "15px",
-            letterSpacing: "-0.01em",
+            minHeight: "44px",
+            color: "rgba(255,255,255,0.95)",
           }}
         >
-          Citadel
-        </span>
-      </Link>
-
-      {/* Nav links — hidden below 1120px via media query in globals.css */}
-      <div
-        className="nav-links"
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "26px",
-          fontSize: "13.5px",
-        }}
-      >
-        {NAV_LINKS.map(({ label, href }) => (
-          <Link
-            key={href}
-            href={href}
+          <span
+            className="mono"
             style={{
-              color:
-                pathname === href
-                  ? "rgba(255,255,255,0.95)"
-                  : "rgba(255,255,255,0.55)",
-              transition: "color 0.15s",
+              width: "22px",
+              height: "22px",
+              border: "1px solid rgba(255,255,255,0.5)",
+              borderRadius: "4px",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "11px",
             }}
-            onMouseEnter={(e) =>
-              (e.currentTarget.style.color = "rgba(255,255,255,0.95)")
-            }
-            onMouseLeave={(e) =>
-              (e.currentTarget.style.color =
-                pathname === href
-                  ? "rgba(255,255,255,0.95)"
-                  : "rgba(255,255,255,0.55)")
-            }
           >
-            {label}
-          </Link>
-        ))}
-      </div>
-
-      {/* Right actions */}
-      <div style={{ display: "flex", alignItems: "center", gap: "18px" }}>
-        <a
-          href="https://github.com/Athish49/ProjectCitadel"
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{
-            fontSize: "13.5px",
-            fontFamily: "var(--font-geist-mono), monospace",
-            color: "rgba(255,255,255,0.55)",
-          }}
-          onMouseEnter={(e) =>
-            (e.currentTarget.style.color = "rgba(255,255,255,0.95)")
-          }
-          onMouseLeave={(e) =>
-            (e.currentTarget.style.color = "rgba(255,255,255,0.55)")
-          }
-        >
-          GitHub
-        </a>
-        <Link
-          href="/playground"
-          className="btn-primary"
-          style={{
-            fontSize: "13.5px",
-            fontWeight: 600,
-            padding: "8px 16px",
-            borderRadius: "6px",
-            whiteSpace: "nowrap",
-          }}
-        >
-          Launch the playground
+            C
+          </span>
+          Citadel
         </Link>
+
+        <nav
+          aria-label="Primary"
+          className="nav-links"
+          style={{ display: "flex", flexWrap: "wrap", gap: "0 26px" }}
+        >
+          {NAV_LINKS.map(({ label, href }) => (
+            <Link
+              key={href}
+              href={href}
+              className="nl"
+              aria-current={pathname === href ? "page" : undefined}
+              style={{
+                fontSize: "14px",
+                color: pathname === href ? "#fff" : "rgba(255,255,255,0.62)",
+                textDecoration: "none",
+                padding: "12px 2px",
+                transition: "color 0.2s",
+              }}
+            >
+              {label}
+            </Link>
+          ))}
+        </nav>
+
+        <div style={{ display: "flex", alignItems: "center", gap: "20px" }}>
+          <a
+            href="https://github.com/Athish49/ProjectCitadel"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mono nl"
+            style={{ fontSize: "13px", color: "rgba(255,255,255,0.62)" }}
+          >
+            GitHub
+          </a>
+          <Link
+            href={cta.href}
+            className="btn btn-p"
+            style={{ minHeight: "40px", padding: "0 14px", fontSize: "13.5px" }}
+          >
+            {cta.label}
+          </Link>
+        </div>
       </div>
-    </nav>
+    </header>
   );
 }

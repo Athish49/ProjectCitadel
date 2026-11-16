@@ -4,27 +4,14 @@ import type { NextConfig } from "next";
 //   Local dev  — BACKEND_URL in .env.local  (default: http://localhost:8080)
 //   Production — BACKEND_URL set in Vercel dashboard to the Render service URL
 //
-// The rewrite proxies /api/backend/* → <BACKEND_URL>/* server-side, so the
-// actual backend host is never exposed in the browser bundle and no CORS
+// Each app/api/** route handler proxies its own request to BACKEND_URL
+// server-side (see app/api/showcase/playground/route.ts etc.), so the actual
+// backend host is never exposed in the browser bundle and no CORS
 // configuration is needed on either side for frontend-initiated requests.
-const BACKEND_URL = process.env.BACKEND_URL ?? "http://localhost:8080";
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   compress: true,
-
-  async rewrites() {
-    return [
-      {
-        source: "/api/backend/:path*",
-        destination: `${BACKEND_URL}/:path*`,
-      },
-    ];
-  },
-
-  experimental: {
-    optimizePackageImports: ["lucide-react", "framer-motion", "@xyflow/react"],
-  },
 
   images: {
     formats: ["image/avif", "image/webp"],
@@ -32,16 +19,29 @@ const nextConfig: NextConfig = {
   },
 
   async headers() {
+    // The 1-year immutable cache is only safe once /_next/static/* filenames
+    // are truly content-hashed, which is a production-build guarantee.
+    // Turbopack's dev-mode chunk filenames are NOT stable across restarts in
+    // the same way, so applying this in dev makes the browser serve stale
+    // JS/CSS after every `next dev` restart until a hard cache-clear —
+    // restrict it to production.
+    const staticCacheHeaders =
+      process.env.NODE_ENV === "production"
+        ? [
+            {
+              source: "/_next/static/:path*",
+              headers: [
+                {
+                  key: "Cache-Control",
+                  value: "public, max-age=31536000, immutable",
+                },
+              ],
+            },
+          ]
+        : [];
+
     return [
-      {
-        source: "/_next/static/:path*",
-        headers: [
-          {
-            key: "Cache-Control",
-            value: "public, max-age=31536000, immutable",
-          },
-        ],
-      },
+      ...staticCacheHeaders,
       {
         source: "/:path*",
         headers: [

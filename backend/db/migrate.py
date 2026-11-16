@@ -1,5 +1,5 @@
 """
-Migration runner for SecureClaim AI.
+Migration runner for Project Citadel.
 
 Applies numbered SQL files from db/migrations/ in lexicographic order.
 Each migration runs in its own transaction; if it fails the transaction is

@@ -1,0 +1,101 @@
+/* Scoped styles for the Matrix page, lifted from the approved redesign
+   prototype (Matrix.dc.html). These classes aren't promoted to globals.css
+   because this page is the only consumer. */
+
+.fld {
+  font: inherit;
+  font-size: 13.5px;
+  color: rgba(255, 255, 255, 0.95);
+  background: #0c0d0f;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  padding: 0 12px;
+  min-height: 44px;
+}
+.fld::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}
+.fld:focus-visible {
+  outline: 2px solid #5b8def;
+  outline-offset: -2px;
+}
+
+.pill {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 12.5px;
+  padding: 0 13px;
+  letter-spacing: 0.02em;
+  min-height: 44px;
+}
+
+.mrow {
+  appearance: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  border: 0;
+  background: transparent;
+  width: 100%;
+  display: grid;
+  grid-template-columns: 48px minmax(220px, 2.6fr) 84px minmax(96px, 1fr) 72px 72px 72px;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 18px;
+  min-height: 52px;
+  transition: background 0.2s;
+}
+.mrow:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+.mrow:focus-visible {
+  outline: 2px solid #5b8def;
+  outline-offset: -2px;
+}
+
+.headerGrid {
+  display: grid;
+  grid-template-columns: 48px minmax(220px, 2.6fr) 84px minmax(96px, 1fr) 72px 72px 72px;
+  gap: 12px;
+  padding: 13px 18px;
+  font-size: 11px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+@keyframes matrixOpen {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.openPanel {
+  padding: 6px 18px 24px 78px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 20px 40px;
+  animation: matrixOpen 0.3s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .openPanel {
+    animation: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .mrow,
+  .headerGrid {
+    grid-template-columns: 44px 1fr 90px !important;
+  }
+  .colPatterns,
+  .colTried,
+  .colBlocked,
+  .colPartial {
+    display: none !important;
+  }
+}

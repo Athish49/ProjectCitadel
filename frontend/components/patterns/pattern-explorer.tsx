@@ -1,13 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { PATTERNS, type Pattern } from "@/lib/data/patterns";
 import { ATTACK_NAMES } from "@/lib/data/matrix";
+import styles from "./patterns.module.css";
 
-const mono: React.CSSProperties = { fontFamily: "var(--font-geist-mono), monospace" };
-
-function PatternListCard({
+function PatternRow({
   p,
   active,
   onClick,
@@ -17,330 +16,183 @@ function PatternListCard({
   onClick: () => void;
 }) {
   return (
-    <div
-      id={p.id}
-      className="pattern-card"
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
       onClick={onClick}
+      className={styles.patRow}
       style={{
-        border: `1px solid ${active ? "rgba(62,207,142,0.5)" : "rgba(255,255,255,0.09)"}`,
-        background: active ? "rgba(62,207,142,0.07)" : "#0B0C0E",
-        padding: "16px 18px",
-        cursor: "pointer",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        gap: "10px",
-        transition: "border-color 0.15s ease, background 0.15s ease",
+        background: active ? "#131417" : "transparent",
+        boxShadow: `inset 2px 0 0 ${active ? "#f4f4f5" : "transparent"}`,
       }}
     >
-      <div style={{ display: "flex", alignItems: "baseline", gap: "12px", minWidth: 0 }}>
-        <span
-          style={{
-            ...mono,
-            fontSize: "12.5px",
-            fontWeight: 600,
-            color: active ? "#3ECF8E" : "rgba(255,255,255,0.42)",
-            flexShrink: 0,
-          }}
-        >
-          {p.id}
-        </span>
-        <span
-          style={{
-            fontSize: "14.5px",
-            fontWeight: 600,
-            color: "rgba(255,255,255,0.92)",
-            letterSpacing: "-0.005em",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {p.name}
-        </span>
-      </div>
-      <span style={{ ...mono, fontSize: "12px", color: "rgba(255,255,255,0.35)", flexShrink: 0 }}>
-        {p.defeats.length}↓
+      <span className="mono" style={{ fontSize: "12px", color: "rgba(255,255,255,0.55)", width: "28px" }}>
+        {p.id}
       </span>
-    </div>
+      <span
+        style={{
+          flexGrow: 1,
+          fontSize: "15px",
+          fontWeight: 500,
+          color: active ? "#ffffff" : "rgba(255,255,255,0.75)",
+        }}
+      >
+        {p.name}
+      </span>
+      <span className="mono" style={{ fontSize: "11.5px", color: "rgba(255,255,255,0.55)" }}>
+        {p.defeats.length} ↓
+      </span>
+    </button>
   );
 }
 
-function DetailPanel({ p }: { p: Pattern }) {
-  const defeatChips = p.defeats.map((id) => ({
-    id,
-    name: ATTACK_NAMES[id] ?? `Attack #${id}`,
-  }));
-
-  const references = p.citation.split(";").map((c) => c.trim());
+function DetailPanel({ p, flip }: { p: Pattern; flip: number }) {
+  const defeatChips = p.defeats.map((id) => ({ id, name: ATTACK_NAMES[id] ?? "" }));
 
   return (
     <div
+      key={flip}
+      className={flip % 2 ? styles.swapA : styles.swapB}
       style={{
-        border: "1px solid rgba(62,207,142,0.3)",
-        background: "#0C0D0F",
-        padding: "36px 38px",
-        display: "flex",
-        flexDirection: "column",
-        gap: "22px",
+        flex: "2.2 1 520px",
+        minWidth: 0,
+        padding: "clamp(24px,3vw,40px)",
       }}
     >
-      {/* Header */}
-      <div>
-        <div style={{ display: "flex", alignItems: "baseline", gap: "14px" }}>
-          <span style={{ ...mono, fontSize: "22px", fontWeight: 700, color: "#3ECF8E" }}>
-            {p.id}
-          </span>
-          <span
-            style={{
-              fontSize: "24px",
-              fontWeight: 600,
-              color: "rgba(255,255,255,0.97)",
-              letterSpacing: "-0.015em",
-            }}
-          >
-            {p.name}
-          </span>
-        </div>
-        <div
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "6px 16px" }}>
+        <span className="mono" style={{ fontSize: "13px", color: "rgba(255,255,255,0.55)" }}>
+          {p.id}
+        </span>
+        <h2
           style={{
-            marginTop: "12px",
-            fontSize: "15px",
-            lineHeight: 1.6,
-            color: "rgba(255,255,255,0.6)",
-            maxWidth: "760px",
+            margin: 0,
+            fontSize: "clamp(26px,3vw,38px)",
+            lineHeight: 1.1,
+            letterSpacing: "-0.03em",
+            fontWeight: 600,
           }}
         >
-          {p.problem}
-        </div>
+          {p.name}
+        </h2>
       </div>
 
-      {/* Key insight */}
-      <div
+      <div className="eb" style={{ marginTop: "30px", fontSize: "11px" }}>
+        The problem
+      </div>
+      <p
         style={{
-          border: "1px solid rgba(62,207,142,0.28)",
-          background: "rgba(62,207,142,0.05)",
-          padding: "18px 20px",
-          display: "flex",
-          flexDirection: "column",
-          gap: "8px",
+          margin: "10px 0 0",
+          fontSize: "clamp(18px,1.7vw,21px)",
+          lineHeight: 1.4,
+          letterSpacing: "-0.01em",
+          maxWidth: "680px",
         }}
       >
-        <div
+        {p.problem}
+      </p>
+
+      <div className="eb" style={{ marginTop: "28px", fontSize: "11px" }}>
+        The shape
+      </div>
+      <p style={{ margin: "10px 0 0", fontSize: "15.5px", color: "rgba(255,255,255,0.75)", maxWidth: "680px" }}>
+        {p.shape}
+      </p>
+
+      {p.code && (
+        <pre
+          className="mono"
           style={{
-            ...mono,
-            fontSize: "10.5px",
-            letterSpacing: "0.1em",
-            color: "#3ECF8E",
+            margin: "18px 0 0",
+            padding: "14px 16px",
+            fontSize: "12.5px",
+            lineHeight: 1.7,
+            whiteSpace: "pre-wrap",
+            background: "#08090a",
+            border: "1px solid rgba(255,255,255,0.08)",
+            borderRadius: "4px",
+            color: "rgba(255,255,255,0.85)",
           }}
         >
-          THE KEY INSIGHT
-        </div>
-        <div style={{ fontSize: "14px", lineHeight: 1.65, color: "rgba(255,255,255,0.82)" }}>
-          {p.shape}
-        </div>
+          {p.code}
+        </pre>
+      )}
+
+      <div className="eb" style={{ marginTop: "28px", fontSize: "11px" }}>
+        Defeats {p.defeats.length} attack classes
+      </div>
+      <div style={{ marginTop: "12px", display: "flex", flexWrap: "wrap", gap: "8px" }}>
+        {defeatChips.map(({ id, name }) => (
+          <Link key={id} href={`/matrix#a${id}`} className={styles.patPill}>
+            <span className="mono" style={{ fontSize: "11.5px", color: "rgba(255,255,255,0.55)" }}>
+              #{id}
+            </span>
+            {name}
+          </Link>
+        ))}
       </div>
 
-      {/* What it defeats */}
-      <div>
-        <div
-          style={{
-            ...mono,
-            fontSize: "10.5px",
-            letterSpacing: "0.1em",
-            color: "rgba(255,255,255,0.4)",
-            marginBottom: "10px",
-          }}
-        >
-          WHAT IT DEFEATS · {p.defeats.length} ATTACK CLASSES
-        </div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
-          {defeatChips.map(({ id, name }) => (
-            <Link
-              key={id}
-              href={`/matrix#a${id}`}
-              style={{
-                ...mono,
-                fontSize: "12px",
-                color: "rgba(255,255,255,0.7)",
-                border: "1px solid rgba(255,255,255,0.14)",
-                padding: "6px 12px",
-                borderRadius: "999px",
-                whiteSpace: "nowrap",
-                textDecoration: "none",
-                transition: "border-color 0.12s, color 0.12s",
-              }}
-              className="defeat-chip"
-            >
-              <span style={{ color: "#3ECF8E" }}>#{id}</span> {name}
-            </Link>
-          ))}
-        </div>
-      </div>
-
-      {/* Implementation + Residual */}
       <div
-        data-impl-grid=""
-        style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}
+        style={{
+          marginTop: "32px",
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))",
+          gap: "1px",
+          background: "rgba(255,255,255,0.08)",
+          border: "1px solid rgba(255,255,255,0.08)",
+        }}
       >
-        {/* Implementation */}
-        <div
-          style={{
-            border: "1px solid rgba(255,255,255,0.1)",
-            padding: "16px 18px",
-            display: "flex",
-            flexDirection: "column",
-            gap: "12px",
-          }}
-        >
-          <div
-            style={{
-              ...mono,
-              fontSize: "10.5px",
-              letterSpacing: "0.1em",
-              color: "rgba(255,255,255,0.4)",
-            }}
-          >
-            IMPLEMENTATION
+        <div className="cell" style={{ padding: "18px 18px 20px" }}>
+          <div className="eb" style={{ fontSize: "11px" }}>
+            Implementation
           </div>
-          {p.snippet && (
-            <div
-              style={{
-                background: "#08090A",
-                border: "1px solid rgba(255,255,255,0.08)",
-                padding: "12px",
-                ...mono,
-                fontSize: "11.5px",
-                lineHeight: 1.6,
-                color: "rgba(255,255,255,0.6)",
-                whiteSpace: "pre-wrap",
-                wordBreak: "break-word",
-              }}
-            >
-              {p.snippet}
-            </div>
-          )}
-          <div style={{ ...mono, fontSize: "12px", color: "rgba(255,255,255,0.55)" }}>
-            <span style={{ color: "rgba(255,255,255,0.35)" }}>code </span>
+          <div className="mono" style={{ marginTop: "10px", fontSize: "12.5px", color: "rgba(255,255,255,0.9)", overflowWrap: "anywhere" }}>
             {p.codeRef}
           </div>
-          <div style={{ ...mono, fontSize: "12px", color: "rgba(255,255,255,0.55)" }}>
-            <span style={{ color: "rgba(255,255,255,0.35)" }}>test </span>
+          <div className="mono" style={{ marginTop: "6px", fontSize: "12px", color: "rgba(255,255,255,0.58)", overflowWrap: "anywhere" }}>
             {p.testRef}
           </div>
         </div>
-
-        {/* Residual risk */}
-        <div
-          style={{
-            border: "1px solid rgba(226,163,54,0.3)",
-            padding: "16px 18px",
-            display: "flex",
-            flexDirection: "column",
-            gap: "10px",
-          }}
-        >
-          <div
-            style={{
-              ...mono,
-              fontSize: "10.5px",
-              letterSpacing: "0.1em",
-              color: "#E2A336",
-            }}
-          >
-            RESIDUAL RISK · HONEST
+        <div className="cell" style={{ padding: "18px 18px 20px" }}>
+          <div className="eb" style={{ fontSize: "11px", color: "#e2a336" }}>
+            Residual risk
           </div>
-          <div style={{ fontSize: "13.5px", lineHeight: 1.6, color: "rgba(255,255,255,0.72)" }}>
-            {p.residual}
-          </div>
+          <div style={{ marginTop: "10px", fontSize: "14px", color: "rgba(255,255,255,0.8)" }}>{p.risk}</div>
         </div>
       </div>
-
-      {/* References */}
-      <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: "18px" }}>
-        <div
-          style={{
-            ...mono,
-            fontSize: "10.5px",
-            letterSpacing: "0.1em",
-            color: "rgba(255,255,255,0.4)",
-            marginBottom: "10px",
-          }}
-        >
-          REFERENCES
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-          {references.map((ref, i) => (
-            <div
-              key={i}
-              style={{
-                display: "flex",
-                alignItems: "baseline",
-                gap: "8px",
-                fontSize: "13px",
-                color: "rgba(255,255,255,0.55)",
-              }}
-            >
-              <span style={{ color: "#3ECF8E", fontSize: "11px" }}>▸</span>
-              {ref}
-            </div>
-          ))}
-        </div>
+      <div className="mono" style={{ marginTop: "16px", fontSize: "12px", color: "rgba(255,255,255,0.58)" }}>
+        {p.ref}
       </div>
     </div>
   );
 }
 
 export function PatternExplorer() {
-  const [selectedId, setSelectedId] = useState("P1");
-
-  /* URL hash deep-link on mount */
-  useEffect(() => {
-    const m = /^#(P\d+)$/.exec(window.location.hash);
-    if (m && PATTERNS.some((p) => p.id === m[1])) {
-      setSelectedId(m[1]);
-      setTimeout(() => {
-        const el = document.getElementById(m[1]);
-        if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
-      }, 80);
-    }
-  }, []);
-
-  const selected = PATTERNS.find((p) => p.id === selectedId) ?? PATTERNS[0];
+  const [sel, setSel] = useState(0);
+  const [flip, setFlip] = useState(0);
+  const selected = PATTERNS[sel];
 
   return (
-    <div
-      data-pattern-explorer=""
-      style={{
-        display: "grid",
-        gridTemplateColumns: "320px 1fr",
-        gap: "20px",
-        alignItems: "start",
-      }}
-    >
-      {/* Pattern list */}
+    <div data-rv className="panel" style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-start" }}>
       <div
-        data-pattern-list=""
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: "10px",
-          position: "sticky",
-          top: "76px",
-        }}
+        role="tablist"
+        aria-label="Patterns"
+        style={{ flex: "1 1 300px", minWidth: 0, borderRight: "1px solid rgba(255,255,255,0.08)" }}
       >
-        {PATTERNS.map((p) => (
-          <PatternListCard
+        {PATTERNS.map((p, i) => (
+          <PatternRow
             key={p.id}
             p={p}
-            active={p.id === selectedId}
-            onClick={() => setSelectedId(p.id)}
+            active={i === sel}
+            onClick={() => {
+              setSel(i);
+              setFlip((f) => f + 1);
+            }}
           />
         ))}
       </div>
 
-      {/* Detail panel */}
-      <DetailPanel p={selected} />
+      <DetailPanel p={selected} flip={flip} />
     </div>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect } from "react";
 import type {
   AdversarialAttempt,
   AgentStatusValue,
@@ -19,9 +19,6 @@ export function useAdversarialStream() {
   const [backendDown,    setBackendDown]     = useState(false);
   const [agentStatus,    setAgentStatus]     = useState<AgentStatusValue>("CONNECTING");
   const [lastSeenAt,     setLastSeenAt]      = useState<string | null>(null);
-
-  const pausedRef = useRef(false);
-  const [paused, setPaused] = useState(false);
 
   useEffect(() => {
     const es = new EventSource("/api/sse/adversarial");
@@ -43,9 +40,7 @@ export function useAdversarialStream() {
     es.addEventListener("history", (e: MessageEvent) => {
       try {
         const history = JSON.parse(e.data) as AdversarialAttempt[];
-        if (!pausedRef.current) {
-          setAttempts(history.slice(0, MAX_ATTEMPTS));
-        }
+        setAttempts(history.slice(0, MAX_ATTEMPTS));
       } catch {
         // ignore malformed events
       }
@@ -76,12 +71,11 @@ export function useAdversarialStream() {
 
     // New live rows from DB polling
     es.addEventListener("attempt", (e: MessageEvent) => {
-      if (pausedRef.current) return;
       try {
         const attempt = JSON.parse(e.data) as AdversarialAttempt;
         setAttempts((prev) => [attempt, ...prev].slice(0, MAX_ATTEMPTS));
         setTotalAttempts((n) => n + 1);
-        if (attempt.pipeline_verdict === "BREACH") {
+        if (attempt.is_breach || attempt.pipeline_verdict === "BREACH") {
           setBreachCount((n) => n + 1);
           setLastBreachAt(attempt.timestamp);
         }
@@ -96,13 +90,6 @@ export function useAdversarialStream() {
     };
   }, []);
 
-  const togglePause = useCallback(() => {
-    pausedRef.current = !pausedRef.current;
-    setPaused(pausedRef.current);
-  }, []);
-
-  const clear = useCallback(() => setAttempts([]), []);
-
   return {
     attempts,
     breachCount,
@@ -110,10 +97,7 @@ export function useAdversarialStream() {
     totalAttempts,
     connected,
     backendDown,
-    paused,
     agentStatus,
     lastSeenAt,
-    togglePause,
-    clear,
   };
 }

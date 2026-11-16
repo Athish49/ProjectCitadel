@@ -1,0 +1,115 @@
+/* Page-specific classes for the Playground console that aren't (yet) part of
+   the shared design system in app/globals.css. Mirrors Playground.dc.html's
+   inline <style> block (.tab, .icon, .cin, .comp, .kv — the design's .ta
+   class is declared in its stylesheet but never actually used by any
+   element in the page markup, so it's omitted here). */
+
+.tab {
+  appearance: none;
+  font: inherit;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  padding: 0 2px;
+  min-height: 44px;
+  font-size: 14px;
+  transition: color 0.2s, border-color 0.2s;
+}
+.tab:hover {
+  color: #fff !important;
+}
+.tab:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.tab:focus-visible {
+  outline: 2px solid #5b8def;
+  outline-offset: 2px;
+}
+
+.icon {
+  appearance: none;
+  cursor: pointer;
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  border: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.75);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s, color 0.2s;
+}
+.icon:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+.icon:focus-visible {
+  outline: 2px solid #5b8def;
+  outline-offset: 2px;
+}
+
+.cin {
+  font: inherit;
+  font-size: 14.5px;
+  color: rgba(255, 255, 255, 0.95);
+  background: transparent;
+  border: 0;
+  outline: 0;
+  resize: none;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 40px;
+  line-height: 20px;
+  padding: 10px 4px;
+}
+.cin::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.comp {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  background: #08090a;
+  transition: border-color 0.2s;
+}
+.comp:focus-within {
+  border-color: rgba(255, 255, 255, 0.4) !important;
+}
+
+.kv {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  font-size: 13.5px;
+}
+
+.msgIn {
+  animation: fadeUp 0.35s ease;
+}
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .msgIn {
+    animation: none;
+  }
+}

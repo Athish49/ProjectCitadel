@@ -21,6 +21,7 @@ class TraceEntry:
     chat_session_id: str | None = None
     persona_key: str | None = None
     has_attachment: bool = False
+    attack_id: int | None = None
     created_at: float = field(default_factory=time.monotonic)
 
 
