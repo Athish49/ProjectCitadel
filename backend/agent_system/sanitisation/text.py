@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from agent_system.ifc.labels import DataLabel, Label, Labeled
 from agent_system.sanitisation.patterns import detect_patterns

@@ -37,7 +37,7 @@ from typing import Any, Protocol
 import anthropic
 import psycopg
 
-from agent_system.egress.filter import REFUSAL_MESSAGE, filter_output
+from agent_system.egress.filter import filter_output
 from agent_system.ifc.labels import DataLabel, Label, Labeled
 from agent_system.tools.capability_tokens import CapabilityToken, verify_token
 from agent_system.tools.implementations.settlement_tools import (

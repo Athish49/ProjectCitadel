@@ -14,10 +14,11 @@ export function PatternsSection() {
 
       <div
         data-rv
+        data-patterns-grid
         style={{
           marginTop: "48px",
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))",
+          gridTemplateColumns: "repeat(4, 1fr)",
           gap: "1px",
           background: "rgba(255,255,255,0.08)",
           border: "1px solid rgba(255,255,255,0.08)",

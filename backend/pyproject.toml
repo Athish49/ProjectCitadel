@@ -21,7 +21,7 @@ dependencies = [
     "pytesseract>=0.3.13",
     "anthropic>=0.105.2",
     "openai>=1.0",
-    "qdrant-client[fastembed]>=1.12",
+    "qdrant-client>=1.12",
 ]
 
 [dependency-groups]
@@ -34,6 +34,12 @@ dev = [
     "faker>=40.19.1",
     "pypdf>=5.0",
     "Pillow>=11.0",
+    # fastembed is only needed by db/ingest.py (offline embedding job) and by
+    # the RAG retriever tests — the deployed web process never imports it
+    # (agent_system.actors / rag_retrievers.py are unreachable from the live
+    # playground pipeline). Run `uv run python -m db.ingest` from an
+    # environment with dev deps installed, not from the always-on service.
+    "fastembed>=0.8",
 ]
 
 [tool.ruff]

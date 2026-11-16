@@ -73,7 +73,7 @@ export function Nav() {
           >
             C
           </span>
-          Citadel
+          Project Citadel
         </Link>
 
         <nav

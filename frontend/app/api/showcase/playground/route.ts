@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { AttackComposerTab } from "@/lib/types/playground";
+import { getBackendUrl } from "@/lib/backend-url";
 
-const BACKEND_URL = process.env.BACKEND_URL ?? "http://localhost:8080";
+const BACKEND_URL = getBackendUrl();
 
 const TAB_ATTACK: Record<AttackComposerTab, { id: number; name: string }> = {
   chat:             { id: 1,  name: "Direct Prompt Injection" },

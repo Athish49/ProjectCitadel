@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import json
 import os
-import stat
 from pathlib import Path
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey

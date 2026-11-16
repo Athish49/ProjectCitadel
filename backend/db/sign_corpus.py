@@ -11,7 +11,6 @@ Re-running is safe: the manifest is re-signed with the same persistent key.
 """
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 _BACKEND_DIR = Path(__file__).parent.parent

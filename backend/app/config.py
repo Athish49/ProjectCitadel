@@ -68,15 +68,27 @@ class Settings(BaseSettings):
         return "production" if self.is_cloud else "local"
 
     # ── CORS ──────────────────────────────────────────────────────────────────
-    # Production: set ALLOWED_ORIGINS on Render to your Vercel domain(s), comma-sep.
-    # Local dev:  leave unset — defaults to "*" so no per-origin config is needed.
+    # Production: set FRONTEND_URL on Render to your Vercel URL — this is the
+    #   simple, recommended option for the common single-origin case, and it's
+    #   all most deployments need.
+    # Production (advanced): set ALLOWED_ORIGINS instead (comma-separated) if
+    #   you need multiple origins/custom domains. ALLOWED_ORIGINS wins if both
+    #   are set.
+    # Local dev: leave both unset — defaults to "*" so no per-origin config is needed.
     allowed_origins_raw: str = Field(default="", alias="ALLOWED_ORIGINS")
+    frontend_url: str = Field(default="", alias="FRONTEND_URL")
 
     @computed_field  # type: ignore[prop-decorator]
     @property
     def allowed_origins(self) -> list[str]:
         if self.allowed_origins_raw:
-            return [o.strip() for o in self.allowed_origins_raw.split(",") if o.strip()]
+            return [
+                o.strip().rstrip("/")
+                for o in self.allowed_origins_raw.split(",")
+                if o.strip()
+            ]
+        if self.frontend_url:
+            return [self.frontend_url.strip().rstrip("/")]
         return [] if self.is_cloud else ["*"]
 
     # ── Database ──────────────────────────────────────────────────────────────

@@ -27,7 +27,7 @@ import subprocess
 from dataclasses import dataclass
 from typing import Literal
 
-from agent_system.ifc.labels import DataLabel, Label, Labeled
+from agent_system.ifc.labels import Labeled
 from agent_system.sanitisation.text import sanitise
 
 MAX_PDF_BYTES = 10 * 1024 * 1024  # 10 MiB — reject before paying spawn cost

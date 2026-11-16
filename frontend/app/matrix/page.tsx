@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Nav } from "@/components/layout/nav";
 import { Footer } from "@/components/layout/footer";
 import { MatrixTable } from "@/components/matrix/matrix-table";
-import { ScrollRevealRoot } from "@/components/matrix/scroll-reveal-root";
+import { ScrollRevealRoot } from "@/components/layout/scroll-reveal";
 import { LIVE_COUNT, ARCH_COUNT, OOS_COUNT } from "@/lib/data/matrix";
 
 export const metadata: Metadata = {
@@ -13,7 +13,7 @@ const mono: React.CSSProperties = { fontFamily: "var(--font-geist-mono), monospa
 
 export default function MatrixPage() {
   return (
-    <ScrollRevealRoot style={{ background: "#0A0B0C", color: "rgba(255,255,255,0.95)", minHeight: "100vh" }}>
+    <ScrollRevealRoot threshold={0.02} dataPage="matrix" style={{ background: "#0A0B0C", color: "rgba(255,255,255,0.95)", minHeight: "100vh" }}>
       <Nav />
 
       <main>

@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
+import { getBackendUrl } from "@/lib/backend-url";
 
-const BACKEND_URL = process.env.BACKEND_URL ?? "http://localhost:8080";
+const BACKEND_URL = getBackendUrl();
 
 function errorStream(message: string): Response {
   const body = `event: stream_error\ndata: ${JSON.stringify({ message })}\n\n`;

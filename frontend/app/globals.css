@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@plugin "tailwindcss-animate";
 
 /* ── Design tokens — Project Citadel website redesign (2026-11) ───────────────── */
 :root {

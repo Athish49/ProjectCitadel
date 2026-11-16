@@ -1522,11 +1522,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/d6/10/c437bd2ac41ef30d3019063e6ce537dc111e9214473b337ee88f7fa6359a/qdrant_client-1.18.0-py3-none-any.whl", hash = "sha256:093aa8cf8a420ee3ad2a68b007e1378d7992b2600e0b53c193fc172674f659cd", size = 398126, upload-time = "2026-05-11T14:12:36.998Z" },
 ]
 
-[package.optional-dependencies]
-fastembed = [
-    { name = "fastembed" },
-]
-
 [[package]]
 name = "requests"
 version = "2.34.2"
@@ -1597,13 +1592,14 @@ dependencies = [
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pytesseract" },
-    { name = "qdrant-client", extra = ["fastembed"] },
+    { name = "qdrant-client" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
 [package.dev-dependencies]
 dev = [
     { name = "faker" },
+    { name = "fastembed" },
     { name = "mypy" },
     { name = "pillow" },
     { name = "pypdf" },
@@ -1627,13 +1623,14 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.9" },
     { name = "pydantic-settings", specifier = ">=2.6" },
     { name = "pytesseract", specifier = ">=0.3.13" },
-    { name = "qdrant-client", extras = ["fastembed"], specifier = ">=1.12" },
+    { name = "qdrant-client", specifier = ">=1.12" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "faker", specifier = ">=40.19.1" },
+    { name = "fastembed", specifier = ">=0.8" },
     { name = "mypy", specifier = ">=1.13" },
     { name = "pillow", specifier = ">=11.0" },
     { name = "pypdf", specifier = ">=5.0" },

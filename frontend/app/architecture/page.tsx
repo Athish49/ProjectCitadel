@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Nav } from "@/components/layout/nav";
 import { Footer } from "@/components/layout/footer";
-import { ScrollReveal } from "@/components/architecture/scroll-reveal";
+import { ScrollReveal } from "@/components/layout/scroll-reveal";
 import { TopologyDiagram } from "@/components/architecture/topology-diagram";
 import { DefenseDepth } from "@/components/architecture/defense-depth";
 import { ControlPlaneDiagram } from "@/components/architecture/control-plane-diagram";
@@ -11,7 +11,7 @@ import styles from "@/components/architecture/architecture.module.css";
 
 export const metadata: Metadata = {
   title: "Architecture — Project Citadel",
-  description: "Citadel assumes any model can be hijacked, then limits what a hijacked one can reach.",
+  description: "Project Citadel assumes any model can be hijacked, then limits what a hijacked one can reach.",
 };
 
 // Section padding the design overrides for this page: .sec's base padding is
@@ -29,7 +29,7 @@ const TD: React.CSSProperties = { padding: "15px 18px", borderBottom: "1px solid
 export default function ArchitecturePage() {
   return (
     <div data-page="architecture" style={{ background: "#0A0B0C", color: "rgba(255,255,255,0.95)", minHeight: "100vh" }}>
-      <ScrollReveal />
+      <ScrollReveal threshold={0.03} />
       <Nav />
 
       <main>
@@ -52,7 +52,7 @@ export default function ArchitecturePage() {
               lineHeight: 1.5, color: "rgba(255,255,255,0.7)", transitionDelay: "160ms",
             }}
           >
-            Citadel assumes any model can be hijacked, then limits what a hijacked one can reach.
+            Project Citadel assumes any model can be hijacked, then limits what a hijacked one can reach.
           </p>
           <div
             data-rv

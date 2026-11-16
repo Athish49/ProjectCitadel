@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Nav } from "@/components/layout/nav";
 import { Footer } from "@/components/layout/footer";
 import { PatternExplorer } from "@/components/patterns/pattern-explorer";
-import { ScrollReveal } from "@/components/patterns/scroll-reveal";
+import { ScrollReveal } from "@/components/layout/scroll-reveal";
 
 export const metadata: Metadata = {
   title: "Defense Patterns — Project Citadel",

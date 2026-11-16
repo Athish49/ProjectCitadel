@@ -701,7 +701,7 @@ def _build_attack_prompt(category: _Category, history: list[AttackOutcome]) -> s
                 if h.sanitizer_detections:
                     parts.append(f"  Ingress result: BLOCKED — patterns: {', '.join(h.sanitizer_detections)}")
                 else:
-                    parts.append(f"  Ingress result: EVADED (passed into SSE pipeline)")
+                    parts.append("  Ingress result: EVADED (passed into SSE pipeline)")
             note = _evasion_note(h)
             if note:
                 parts.append(f"  Evasion guidance: {note}")

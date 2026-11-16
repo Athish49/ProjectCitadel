@@ -15,7 +15,6 @@ import uuid
 import psycopg
 
 from agent_system.vault.crypto import (
-    ARGON_PROD,
     ArgonParams,
     encrypt_field,
     hash_secret,

@@ -1,132 +1,18 @@
-"""Unit tests for the adversarial SSE event bus and endpoint (Sprint 4.3.4)."""
+"""Unit tests for the adversarial SSE endpoint (Sprint 4.3.4).
+
+Note: the in-process event-bus tests (TestEventBus) that previously lived
+here were removed along with app/showcase/events.py, which was dead code —
+superseded by DB polling (see app/showcase/adversarial_sse.py) and never
+imported by any production module. Only this test file imported it.
+"""
 from __future__ import annotations
 
-import asyncio
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 pytestmark = pytest.mark.unit
-
-
-# ---------------------------------------------------------------------------
-# Event bus tests
-# ---------------------------------------------------------------------------
-
-
-def _fresh_events():
-    """Import events module with a clean global state."""
-    import importlib
-    import sys
-    if "app.showcase.events" in sys.modules:
-        del sys.modules["app.showcase.events"]
-    import app.showcase.events as ev
-    ev._subscribers.clear()
-    ev._breach_count = 0
-    ev._last_breach_at = None
-    return ev
-
-
-class TestEventBus:
-    def test_subscribe_adds_queue(self):
-        ev = _fresh_events()
-        assert len(ev._subscribers) == 0
-        q = ev.subscribe()
-        assert q in ev._subscribers
-
-    def test_unsubscribe_removes_queue(self):
-        ev = _fresh_events()
-        q = ev.subscribe()
-        ev.unsubscribe(q)
-        assert q not in ev._subscribers
-
-    def test_unsubscribe_unknown_queue_is_safe(self):
-        ev = _fresh_events()
-        q: asyncio.Queue = asyncio.Queue()
-        ev.unsubscribe(q)  # must not raise
-
-    def test_publish_non_breach_does_not_increment_count(self):
-        ev = _fresh_events()
-        event = ev.AdversarialEvent(
-            trace_id="t1", session_id="s1", attack_id=1,
-            verdict="BLOCKED_INGRESS",
-        )
-        ev.publish(event)
-        assert ev._breach_count == 0
-        assert ev._last_breach_at is None
-
-    def test_publish_breach_increments_count(self):
-        ev = _fresh_events()
-        event = ev.AdversarialEvent(
-            trace_id="t1", session_id="s1", attack_id=1,
-            verdict="EVADED_INGRESS",
-        )
-        ev.publish(event)
-        assert ev._breach_count == 1
-        assert ev._last_breach_at is not None
-
-    def test_publish_multiple_breaches_accumulate(self):
-        ev = _fresh_events()
-        for _ in range(3):
-            ev.publish(ev.AdversarialEvent(
-                trace_id="t", session_id="s", attack_id=1, verdict="EVADED_INGRESS",
-            ))
-        assert ev._breach_count == 3
-
-    def test_publish_delivers_to_subscriber(self):
-        ev = _fresh_events()
-        q = ev.subscribe()
-        ev.publish(ev.AdversarialEvent(
-            trace_id="t1", session_id="s1", attack_id=7, verdict="BLOCKED_INGRESS",
-            sanitizer_detections=["dan_mode"], chars_stripped=5,
-        ))
-        assert not q.empty()
-        payload = q.get_nowait()
-        assert payload["trace_id"] == "t1"
-        assert payload["attack_id"] == 7
-        assert payload["verdict"] == "BLOCKED_INGRESS"
-        assert payload["sanitizer_detections"] == ["dan_mode"]
-        assert payload["chars_stripped"] == 5
-        assert payload["is_breach"] is False
-        assert payload["breach_count"] == 0
-
-    def test_publish_breach_payload_has_is_breach_true(self):
-        ev = _fresh_events()
-        q = ev.subscribe()
-        ev.publish(ev.AdversarialEvent(
-            trace_id="t2", session_id="s2", attack_id=3, verdict="EVADED_INGRESS",
-        ))
-        payload = q.get_nowait()
-        assert payload["is_breach"] is True
-        assert payload["breach_count"] == 1
-
-    def test_get_breach_stats_initial(self):
-        ev = _fresh_events()
-        stats = ev.get_breach_stats()
-        assert stats["breach_count"] == 0
-        assert stats["last_breach_at"] is None
-
-    def test_get_breach_stats_after_breach(self):
-        ev = _fresh_events()
-        ev.publish(ev.AdversarialEvent(
-            trace_id="t", session_id="s", attack_id=1, verdict="EVADED_INGRESS",
-        ))
-        stats = ev.get_breach_stats()
-        assert stats["breach_count"] == 1
-        assert stats["last_breach_at"] is not None
-
-    def test_full_queue_drops_and_unsubscribes(self):
-        ev = _fresh_events()
-        q = ev.subscribe()
-        # Fill queue to maxsize
-        for i in range(q.maxsize):
-            q.put_nowait({"i": i})
-        # Next publish should drop this subscriber
-        ev.publish(ev.AdversarialEvent(
-            trace_id="t", session_id="s", attack_id=1, verdict="BLOCKED_INGRESS",
-        ))
-        assert q not in ev._subscribers
 
 
 # ---------------------------------------------------------------------------

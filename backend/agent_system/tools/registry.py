@@ -28,7 +28,7 @@ CONFIDENTIAL data. The registry logs only params_keys and the scope dict
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Callable
 
 import psycopg
